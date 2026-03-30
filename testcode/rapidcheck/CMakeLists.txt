@@ -23,8 +23,10 @@ set(TEST_INCLUDE_DIRS
     ${openHiTLS_SRC}/crypto/sm4/include
     ${openHiTLS_SRC}/crypto/hmac/include
     ${openHiTLS_SRC}/crypto/sha2/include
+    ${openHiTLS_SRC}/crypto/sha1/include
     ${openHiTLS_SRC}/crypto/md5/include
     ${openHiTLS_SRC}/crypto/bn/include
+    ${openHiTLS_SRC}/crypto/chacha20/include
     ${openHiTLS_SRC}/crypto/include
     ${openHiTLS_SRC}/crypto/eal/include
     ${openHiTLS_SRC}/crypto/provider/include
@@ -33,10 +35,14 @@ set(TEST_INCLUDE_DIRS
     ${openHiTLS_SRC}/bsl/err/include
     ${openHiTLS_SRC}/bsl/params/include
     ${openHiTLS_SRC}/bsl/core/include
+    ${openHiTLS_SRC}/bsl/base64/include
     ${openHiTLS_SRC}/config/macro_config
     ${openHiTLS_SRC}/platform/Secure_C/include
 )
 
+# =============================================================================
+# AES Tests
+# =============================================================================
 add_executable(rapidcheck_aes_test rapidcheck_aes_test.cpp)
 target_include_directories(rapidcheck_aes_test PRIVATE ${TEST_INCLUDE_DIRS})
 target_compile_definitions(rapidcheck_aes_test PRIVATE
@@ -53,6 +59,9 @@ target_link_libraries(rapidcheck_aes_test
     ${openHiTLS_SRC}/platform/Secure_C/lib/libboundscheck.a
 )
 
+# =============================================================================
+# SM3/Hash Tests
+# =============================================================================
 add_executable(rapidcheck_hash_test rapidcheck_hash_test.cpp)
 target_include_directories(rapidcheck_hash_test PRIVATE ${TEST_INCLUDE_DIRS})
 target_compile_definitions(rapidcheck_hash_test PRIVATE
@@ -68,6 +77,71 @@ target_link_libraries(rapidcheck_hash_test
     ${openHiTLS_SRC}/platform/Secure_C/lib/libboundscheck.a
 )
 
+# =============================================================================
+# SHA2 Tests
+# =============================================================================
+add_executable(rapidcheck_sha2_test rapidcheck_sha2_test.cpp)
+target_include_directories(rapidcheck_sha2_test PRIVATE ${TEST_INCLUDE_DIRS})
+target_compile_definitions(rapidcheck_sha2_test PRIVATE
+    HITLS_CRYPTO_SHA2
+    HITLS_CRYPTO_PROVIDER
+)
+target_link_libraries(rapidcheck_sha2_test 
+    rapidcheck
+    ${openHiTLS_SRC}/build/libhitls_crypto.a
+    ${openHiTLS_SRC}/build/libhitls_bsl.a
+    ${openHiTLS_SRC}/platform/Secure_C/lib/libboundscheck.a
+)
+
+# =============================================================================
+# SM4 Tests
+# =============================================================================
+add_executable(rapidcheck_sm4_test rapidcheck_sm4_test.cpp)
+target_include_directories(rapidcheck_sm4_test PRIVATE ${TEST_INCLUDE_DIRS})
+target_compile_definitions(rapidcheck_sm4_test PRIVATE
+    HITLS_CRYPTO_SM4
+    HITLS_CRYPTO_ECB
+    HITLS_CRYPTO_CBC
+    HITLS_CRYPTO_CTR
+)
+target_link_libraries(rapidcheck_sm4_test 
+    rapidcheck
+    ${openHiTLS_SRC}/build/libhitls_crypto.a
+    ${openHiTLS_SRC}/build/libhitls_bsl.a
+    ${openHiTLS_SRC}/platform/Secure_C/lib/libboundscheck.a
+)
+
+# =============================================================================
+# BN (Big Number) Tests
+# =============================================================================
+add_executable(rapidcheck_bn_test rapidcheck_bn_test.cpp)
+target_include_directories(rapidcheck_bn_test PRIVATE ${TEST_INCLUDE_DIRS})
+target_compile_definitions(rapidcheck_bn_test PRIVATE
+    HITLS_CRYPTO_BN
+    HITLS_CRYPTO_EAL_BN
+    HITLS_SIXTY_FOUR_BITS
+)
+target_link_libraries(rapidcheck_bn_test 
+    rapidcheck
+    ${openHiTLS_SRC}/build/libhitls_crypto.a
+    ${openHiTLS_SRC}/build/libhitls_bsl.a
+    ${openHiTLS_SRC}/platform/Secure_C/lib/libboundscheck.a
+)
+
+# =============================================================================
+# Base64 Tests
+# =============================================================================
+add_executable(rapidcheck_base64_test rapidcheck_base64_test.cpp)
+target_include_directories(rapidcheck_base64_test PRIVATE ${TEST_INCLUDE_DIRS})
+target_link_libraries(rapidcheck_base64_test 
+    rapidcheck
+    ${openHiTLS_SRC}/build/libhitls_bsl.a
+    ${openHiTLS_SRC}/platform/Secure_C/lib/libboundscheck.a
+)
+
+# =============================================================================
+# App Opt Tests
+# =============================================================================
 add_executable(rapidcheck_opt_test rapidcheck_opt_test.cpp)
 target_include_directories(rapidcheck_opt_test PRIVATE ${TEST_INCLUDE_DIRS})
 target_sources(rapidcheck_opt_test PRIVATE
@@ -85,6 +159,9 @@ target_link_libraries(rapidcheck_opt_test
     ${openHiTLS_SRC}/platform/Secure_C/lib/libboundscheck.a
 )
 
+# =============================================================================
+# HMAC Tests (disabled - C++ keyword conflict)
+# =============================================================================
 # Note: rapidcheck_hmac_test is disabled because openHiTLS uses 'export' as a struct member name
 # which conflicts with the C++ reserved keyword 'export'
 # add_executable(rapidcheck_hmac_test rapidcheck_hmac_test.cpp)
@@ -101,8 +178,15 @@ target_link_libraries(rapidcheck_opt_test
 #     ${openHiTLS_SRC}/platform/Secure_C/lib/libboundscheck.a
 # )
 
+# =============================================================================
+# Test Registration
+# =============================================================================
 enable_testing()
 add_test(NAME RapidCheck_AES COMMAND rapidcheck_aes_test)
 add_test(NAME RapidCheck_Hash COMMAND rapidcheck_hash_test)
+add_test(NAME RapidCheck_SHA2 COMMAND rapidcheck_sha2_test)
+add_test(NAME RapidCheck_SM4 COMMAND rapidcheck_sm4_test)
+add_test(NAME RapidCheck_BN COMMAND rapidcheck_bn_test)
+add_test(NAME RapidCheck_Base64 COMMAND rapidcheck_base64_test)
 add_test(NAME RapidCheck_Opt COMMAND rapidcheck_opt_test)
 # add_test(NAME RapidCheck_HMAC COMMAND rapidcheck_hmac_test)
