@@ -60,6 +60,10 @@ print_usage() {
     echo "  bn                  Run Big Number property tests"
     echo "  base64              Run Base64 property tests"
     echo "  opt                 Run App Option property tests"
+    echo "  md5                 Run MD5 hash property tests"
+    echo "  sha1                Run SHA-1 hash property tests"
+    echo "  chacha20            Run ChaCha20 stream cipher property tests"
+    echo "  buffer              Run Buffer operations property tests"
     echo "  all                 Run all tests (default)"
     echo ""
     echo "Examples:"
@@ -79,6 +83,10 @@ list_tests() {
     echo "  bn        - Big Number arithmetic properties"
     echo "  base64    - Base64 encoding/decoding properties"
     echo "  opt       - Application option parsing properties"
+    echo "  md5       - MD5 hash function properties"
+    echo "  sha1      - SHA-1 hash function properties"
+    echo "  chacha20  - ChaCha20 stream cipher properties"
+    echo "  buffer    - Buffer operations properties"
 }
 
 check_prerequisites() {
@@ -217,18 +225,18 @@ run_tests() {
     local TESTS_TO_RUN=("$@")
     
     if [ ${#TESTS_TO_RUN[@]} -eq 0 ]; then
-        TESTS_TO_RUN=("aes" "hash" "sha2" "sm4" "bn" "base64" "opt")
+        TESTS_TO_RUN=("aes" "hash" "sha2" "sm4" "bn" "base64" "opt" "md5" "sha1" "chacha20" "buffer")
     fi
     
     print_banner
     
     for test in "${TESTS_TO_RUN[@]}"; do
         case "$test" in
-            aes|hash|sha2|sm4|bn|base64|opt)
+            aes|hash|sha2|sm4|bn|base64|opt|md5|sha1|chacha20|buffer)
                 run_single_test "$test"
                 ;;
             all)
-                run_tests aes hash sha2 sm4 bn base64 opt
+                run_tests aes hash sha2 sm4 bn base64 opt md5 sha1 chacha20 buffer
                 ;;
             *)
                 echo -e "${YELLOW}[WARN] Unknown test: $test${NC}"
