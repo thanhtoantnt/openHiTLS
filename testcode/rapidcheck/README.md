@@ -1,0 +1,226 @@
+# RapidCheck Property-Based Tests for openHiTLS
+
+This directory contains property-based tests for openHiTLS using the [RapidCheck](https://github.com/emil-e/rapidcheck) framework.
+
+Each test file includes annotations linking to the original unit tests that the property-based tests generalize. Look for `@generalizes` and `@see` tags in the source code.
+
+## What is Property-Based Testing?
+
+Property-based testing is a testing methodology where you define **properties** (invariants) that should always hold true for your code, rather than writing specific test cases with fixed inputs. The testing framework then automatically generates random test inputs to try to find cases where the property fails.
+
+Key benefits:
+- **Automatic test case generation**: Tests thousands of random inputs automatically
+- **Shrinking**: When a failure is found, RapidCheck automatically finds the minimal failing case
+- **Better coverage**: Finds edge cases you might not think of manually
+
+## Test Files
+
+| File | Description |
+|------|-------------|
+| `rapidcheck_aes_test.cpp` | Property tests for AES encryption/decryption |
+| `rapidcheck_hash_test.cpp` | Property tests for SM3 hash functions |
+| `rapidcheck_hmac_test.cpp` | Property tests for HMAC operations |
+
+## Properties Tested
+
+### AES Tests (7 properties)
+Each property generalizes specific unit tests from `testcode/sdv/testcase/crypto/aes/`:
+
+| Property | Generalizes | Unit Test File |
+|----------|-------------|----------------|
+| Encrypt-decrypt roundtrip (128/192/256-bit) | `SDV_CRYPTO_AES_INIT_API_TC001`, `SDV_CRYPTO_AES_ENCRYPT_DECRYPT_API_TC001` | `test_suite_sdv_eal_aes.c` |
+| Different plaintexts → different ciphertexts | Confusion property | `test_suite_sdv_eal_aes.c` |
+| Different keys → different ciphertexts | Key sensitivity | `test_suite_sdv_eal_aes.c` |
+| Deterministic encryption | `SDV_CRYPTO_AES_ENCRYPT_DECRYPT_API_TC001` | `test_suite_sdv_eal_aes.c:574` |
+| Ciphertext differs from plaintext | Confusion property | `test_suite_sdv_eal_aes.c` |
+
+### Hash Tests (SM3) (5 properties)
+Each property generalizes specific unit tests from `testcode/sdv/testcase/crypto/sm3/`:
+
+| Property | Generalizes | Unit Test File |
+|----------|-------------|----------------|
+| Determinism | `SDV_CRYPT_EAL_SM3_API_TC001`, `MultiThreadTest` | `test_suite_sdv_eal_sm3.c:33-50, 72-114` |
+| Fixed 32-byte output | `SDV_CRYPT_EAL_SM3_API_TC001` | `test_suite_sdv_eal_sm3.c:77-82` |
+| Incremental hashing | `SDV_CRYPT_EAL_SM3_API_TC003`, `SDV_CRYPT_EAL_SM3_API_TC004` | `test_suite_sdv_eal_sm3.c:200-236, 270-295` |
+| Different inputs → different hashes | Collision resistance | `test_suite_sdv_eal_sm3.c` |
+| Context copy produces same hash | `SDV_CRYPT_EAL_SM3_API_TC005` | `test_suite_sdv_eal_sm3.c:312-360` |
+
+### HMAC Tests (7 properties) - Currently Disabled
+Each property generalizes specific unit tests from `testcode/sdv/testcase/crypto/hmac/`:
+
+| Property | Generalizes | Unit Test File |
+|----------|-------------|----------------|
+| Determinism | `SDV_CRYPT_EAL_HMAC_API_TC001`, `SDV_CRYPT_EAL_HMAC_API_TC002` | `test_suite_sdv_eal_mac_hmac.c:34-88` |
+| Output size matches expected | `SDV_CRYPT_EAL_HMAC_API_TC002` | `test_suite_sdv_eal_mac_hmac.c:73-88` |
+| Incremental update | `SDV_CRYPT_EAL_HMAC_API_TC003` | `test_suite_sdv_eal_mac_hmac.c:100-150` |
+| Key sensitivity | Key sensitivity test | `test_suite_sdv_eal_mac_hmac.c` |
+| Message sensitivity | Message sensitivity test | `test_suite_sdv_eal_mac_hmac.c` |
+| Reinit produces same MAC | `SDV_CRYPT_EAL_HMAC_API_TC003` | `test_suite_sdv_eal_mac_hmac.c:100-130` |
+| Context duplication | `SDV_CRYPT_EAL_HMAC_API_TC004` | `test_suite_sdv_eal_mac_hmac.c` |
+
+**Note**: HMAC tests are disabled due to C++ keyword conflict (`export` used as struct member in `crypt_local_types.h:207`).
+
+## Building the Tests
+
+### Prerequisites
+- CMake 3.16+
+- C++17 compiler
+- openHiTLS built with crypto components
+
+### Build Steps
+
+```bash
+# 1. Build openHiTLS first
+cd /path/to/openHiTLS
+mkdir -p build && cd build
+python3 ../configure.py --enable hitls_bsl hitls_crypto --lib_type static --bits=64 --system=linux
+cmake .. && make
+
+# 2. Build RapidCheck tests
+cd testcode/rapidcheck
+mkdir -p build && cd build
+cmake .. -DopenHiTLS_SRC=/path/to/openHiTLS
+make
+
+# 3. Run tests
+./rapidcheck_aes_test
+./rapidcheck_hash_test
+./rapidcheck_hmac_test
+
+# Or run all tests via CTest
+ctest
+```
+
+## Example Output
+
+When tests pass:
+```
+Using configuration: seed=1234567890
+
+- AES ECB encrypt-decrypt roundtrip preserves plaintext
+OK, passed 100 tests
+
+- AES single block encrypt-decrypt roundtrip
+OK, passed 100 tests
+```
+
+When a test fails (hypothetical bug):
+```
+Falsifiable after 12 tests and 10 shrinks
+
+std::tuple<std::vector<uint8_t>, std::vector<uint8_t>>:
+([1, 0, 0, 0], [16 byte key])
+
+rapidcheck_aes_test.cpp:45:
+RC_ASSERT(plaintext == decrypted)
+
+Expands to:
+[1, 0, 0, 0] == [0, 0, 0, 0]
+```
+
+## Writing New Property Tests
+
+### Basic Pattern
+
+```cpp
+#include <rapidcheck.h>
+#include "your_header.h"
+
+using namespace rc;
+
+int main() {
+    rc::check("Property description",
+        [](const std::vector<uint8_t> &input) {
+            // Preconditions (filter inputs)
+            RC_PRE(input.size() > 0);
+            
+            // Call function under test
+            auto result = your_function(input);
+            
+            // Assert property
+            RC_ASSERT(result.size() == expected_size);
+        });
+    
+    return 0;
+}
+```
+
+### Key Macros
+
+| Macro | Purpose |
+|-------|---------|
+| `RC_PRE(condition)` | Precondition - skip test if false |
+| `RC_ASSERT(condition)` | Assert property must hold |
+| `RC_LOG(msg)` | Log debug information |
+| `RC_FAIL(msg)` | Explicitly fail the test |
+
+### Generators
+
+```cpp
+// Built-in types
+gen::arbitrary<int>()
+gen::arbitrary<uint8_t>()
+
+// Collections
+gen::vectorOf(gen::arbitrary<uint8_t>())       // Random size
+gen::vectorOfN(16, gen::arbitrary<uint8_t>())  // Fixed size
+
+// Ranges
+gen::inRange(0, 100)                           // Integer in [0, 100)
+
+// Combinations
+gen::pair(gen::arbitrary<int>(), gen::arbitrary<int>())
+gen::map(gen::arbitrary<int>(), [](int x) { return x * 2; })
+```
+
+### Custom Generators
+
+```cpp
+namespace rc {
+
+template<>
+struct Arbitrary<YourType> {
+    static Gen<YourType> arbitrary() {
+        return gen::map(
+            gen::vectorOfN(32, gen::arbitrary<uint8_t>()),
+            [](const std::vector<uint8_t> &v) {
+                YourType t;
+                std::memcpy(&t, v.data(), v.size());
+                return t;
+            }
+        );
+    }
+};
+
+}
+```
+
+## Integration with CI
+
+Add to your CI pipeline:
+
+```yaml
+- name: Build RapidCheck tests
+  run: |
+    cd testcode/rapidcheck
+    mkdir build && cd build
+    cmake .. && make
+    
+- name: Run RapidCheck tests
+  run: |
+    cd testcode/rapidcheck/build
+    ctest --output-on-failure
+```
+
+## Comparison with DeepState
+
+| Feature | RapidCheck | DeepState |
+|---------|------------|-----------|
+| Test style | Property-based | Google Test-like |
+| Execution | Random testing | Symbolic execution + fuzzing |
+| Shrinking | Yes | Yes |
+| Backends | Native only | angr, Manticore, AFL, libFuzzer |
+| Best for | Quick property checks | Deep vulnerability finding |
+
+Use **RapidCheck** for quick property verification during development.
+Use **DeepState** for thorough symbolic/fuzzing analysis before release.
