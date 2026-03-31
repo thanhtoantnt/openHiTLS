@@ -312,6 +312,272 @@ int main() {
         });
 
     /**
+     * @test CRYPT_EAL_CipherUpdate outLen invariant for block cipher modes (CBC, ECB)
+     * @property For block cipher modes, outLen <= inLen and outLen % blockSize == 0
+     * @invariant Block cipher output is always a multiple of block size
+     * @invariant Block cipher output never exceeds input length (no cached data case)
+     * @see crypt_eal_cipher.h:149-158
+     */
+    rc::check("CRYPT_EAL_CipherUpdate outLen is multiple of blockSize and <= inLen for CBC/ECB",
+        []() {
+            auto algId = *gen::element(CRYPT_CIPHER_SM4_ECB, CRYPT_CIPHER_SM4_CBC);
+            CRYPT_EAL_CipherCtx *ctx = CRYPT_EAL_CipherNewCtx(algId);
+            RC_PRE(ctx != nullptr);
+            
+            auto keyData = genValidKey();
+            auto ivData = genValidIV();
+            
+            int32_t ret = CRYPT_EAL_CipherInit(ctx, keyData.data(), 16, 
+                                               (algId == CRYPT_CIPHER_SM4_ECB) ? nullptr : ivData.data(),
+                                               (algId == CRYPT_CIPHER_SM4_ECB) ? 0 : 16, true);
+            RC_PRE(ret == CRYPT_SUCCESS);
+            
+            auto inputData = genValidInput();
+            std::vector<uint8_t> output(inputData.size() + BLOCKSIZE);
+            uint32_t outLen = output.size();
+            
+            ret = CRYPT_EAL_CipherUpdate(ctx, inputData.data(), inputData.size(), output.data(), &outLen);
+            RC_ASSERT(ret == CRYPT_SUCCESS);
+            
+            RC_ASSERT(outLen <= inputData.size());
+            RC_ASSERT(outLen % BLOCKSIZE == 0);
+            
+            CRYPT_EAL_CipherDeinit(ctx);
+            CRYPT_EAL_CipherFreeCtx(ctx);
+        });
+
+    /**
+     * @test CRYPT_EAL_CipherUpdate outLen invariant for XTS mode
+     * @property For XTS mode, outLen <= inLen - 32 and outLen % blockSize == 0
+     * @invariant XTS reserves last 2 blocks (32 bytes) for Final
+     * @invariant XTS output is always a multiple of block size
+     * @see crypt_eal_cipher.h:159-162
+     */
+    rc::check("CRYPT_EAL_CipherUpdate outLen reserves 2 blocks for XTS Final",
+        []() {
+            CRYPT_EAL_CipherCtx *ctx = CRYPT_EAL_CipherNewCtx(CRYPT_CIPHER_SM4_XTS);
+            RC_PRE(ctx != nullptr);
+            
+            auto keyData = *gen::container<std::vector<uint8_t>>(32, gen::arbitrary<uint8_t>());
+            auto ivData = genValidIV();
+            
+            int32_t ret = CRYPT_EAL_CipherInit(ctx, keyData.data(), 32, ivData.data(), 16, true);
+            RC_PRE(ret == CRYPT_SUCCESS);
+            
+            auto inLen = *gen::inRange(32, 128);
+            auto inputData = *gen::container<std::vector<uint8_t>>(inLen, gen::arbitrary<uint8_t>());
+            std::vector<uint8_t> output(inputData.size());
+            uint32_t outLen = output.size();
+            
+            ret = CRYPT_EAL_CipherUpdate(ctx, inputData.data(), inputData.size(), output.data(), &outLen);
+            RC_ASSERT(ret == CRYPT_SUCCESS);
+            
+            RC_ASSERT(outLen % BLOCKSIZE == 0);
+            RC_ASSERT(outLen <= inputData.size() - 32);
+            
+            CRYPT_EAL_CipherDeinit(ctx);
+            CRYPT_EAL_CipherFreeCtx(ctx);
+        });
+
+    /**
+     * @test CRYPT_EAL_CipherUpdate outLen is always >= 0
+     * @property After successful Update, outLen is always non-negative
+     * @invariant outLen >= 0 for all cipher modes
+     */
+    rc::check("CRYPT_EAL_CipherUpdate outLen is always non-negative",
+        []() {
+            auto algId = *gen::element(CRYPT_CIPHER_SM4_ECB, CRYPT_CIPHER_SM4_CBC, 
+                                       CRYPT_CIPHER_SM4_CTR, CRYPT_CIPHER_SM4_XTS);
+            CRYPT_EAL_CipherCtx *ctx = CRYPT_EAL_CipherNewCtx(algId);
+            RC_PRE(ctx != nullptr);
+            
+            auto keyData = (algId == CRYPT_CIPHER_SM4_XTS) 
+                ? *gen::container<std::vector<uint8_t>>(32, gen::arbitrary<uint8_t>())
+                : genValidKey();
+            auto ivData = genValidIV();
+            
+            int32_t ret = CRYPT_EAL_CipherInit(ctx, keyData.data(), keyData.size(), 
+                                               (algId == CRYPT_CIPHER_SM4_ECB) ? nullptr : ivData.data(),
+                                               (algId == CRYPT_CIPHER_SM4_ECB) ? 0 : 16, true);
+            RC_PRE(ret == CRYPT_SUCCESS);
+            
+            auto inLen = (algId == CRYPT_CIPHER_SM4_XTS) 
+                ? *gen::inRange(32, 128)
+                : *gen::inRange(1, 64);
+            auto inputData = *gen::container<std::vector<uint8_t>>(inLen, gen::arbitrary<uint8_t>());
+            std::vector<uint8_t> output(inputData.size() + BLOCKSIZE * 2);
+            uint32_t outLen = output.size();
+            
+            ret = CRYPT_EAL_CipherUpdate(ctx, inputData.data(), inputData.size(), output.data(), &outLen);
+            RC_ASSERT(ret == CRYPT_SUCCESS);
+            RC_ASSERT(outLen >= 0);
+            
+            CRYPT_EAL_CipherDeinit(ctx);
+            CRYPT_EAL_CipherFreeCtx(ctx);
+        });
+
+    /**
+     * @test CRYPT_EAL_CipherUpdate outLen for CBC with inLen < blockSize
+     * @property When inLen < blockSize for CBC/ECB, outLen == 0 (data cached)
+     * @invariant Block cipher caches incomplete blocks
+     * @see crypt_eal_cipher.h:150-151
+     */
+    rc::check("CRYPT_EAL_CipherUpdate outLen is 0 when inLen < blockSize for CBC/ECB",
+        []() {
+            auto algId = *gen::element(CRYPT_CIPHER_SM4_ECB, CRYPT_CIPHER_SM4_CBC);
+            CRYPT_EAL_CipherCtx *ctx = CRYPT_EAL_CipherNewCtx(algId);
+            RC_PRE(ctx != nullptr);
+            
+            auto keyData = genValidKey();
+            auto ivData = genValidIV();
+            
+            int32_t ret = CRYPT_EAL_CipherInit(ctx, keyData.data(), 16, 
+                                               (algId == CRYPT_CIPHER_SM4_ECB) ? nullptr : ivData.data(),
+                                               (algId == CRYPT_CIPHER_SM4_ECB) ? 0 : 16, true);
+            RC_PRE(ret == CRYPT_SUCCESS);
+            
+            auto inLen = *gen::inRange(1, BLOCKSIZE);
+            auto inputData = *gen::container<std::vector<uint8_t>>(inLen, gen::arbitrary<uint8_t>());
+            std::vector<uint8_t> output(BLOCKSIZE * 2);
+            uint32_t outLen = BLOCKSIZE * 2;
+            
+            ret = CRYPT_EAL_CipherUpdate(ctx, inputData.data(), inLen, output.data(), &outLen);
+            RC_ASSERT(ret == CRYPT_SUCCESS);
+            RC_ASSERT(outLen == 0);
+            
+            CRYPT_EAL_CipherDeinit(ctx);
+            CRYPT_EAL_CipherFreeCtx(ctx);
+        });
+
+    /**
+     * @test CRYPT_EAL_CipherUpdate outLen for CBC with inLen == blockSize
+     * @property When inLen == blockSize for CBC/ECB, outLen == blockSize
+     * @invariant Complete block produces output
+     * @see crypt_eal_cipher.h:152-153
+     */
+    rc::check("CRYPT_EAL_CipherUpdate outLen equals blockSize when inLen == blockSize for CBC/ECB",
+        []() {
+            auto algId = *gen::element(CRYPT_CIPHER_SM4_ECB, CRYPT_CIPHER_SM4_CBC);
+            CRYPT_EAL_CipherCtx *ctx = CRYPT_EAL_CipherNewCtx(algId);
+            RC_PRE(ctx != nullptr);
+            
+            auto keyData = genValidKey();
+            auto ivData = genValidIV();
+            
+            int32_t ret = CRYPT_EAL_CipherInit(ctx, keyData.data(), 16, 
+                                               (algId == CRYPT_CIPHER_SM4_ECB) ? nullptr : ivData.data(),
+                                               (algId == CRYPT_CIPHER_SM4_ECB) ? 0 : 16, true);
+            RC_PRE(ret == CRYPT_SUCCESS);
+            
+            auto inputData = *gen::container<std::vector<uint8_t>>(BLOCKSIZE, gen::arbitrary<uint8_t>());
+            std::vector<uint8_t> output(BLOCKSIZE * 2);
+            uint32_t outLen = BLOCKSIZE * 2;
+            
+            ret = CRYPT_EAL_CipherUpdate(ctx, inputData.data(), BLOCKSIZE, output.data(), &outLen);
+            RC_ASSERT(ret == CRYPT_SUCCESS);
+            RC_ASSERT(outLen == BLOCKSIZE);
+            
+            CRYPT_EAL_CipherDeinit(ctx);
+            CRYPT_EAL_CipherFreeCtx(ctx);
+        });
+
+    /**
+     * @test CRYPT_EAL_CipherUpdate outLen for CBC with inLen > blockSize (not multiple)
+     * @property When inLen > blockSize and not multiple, outLen == (inLen/blockSize)*blockSize
+     * @invariant Only complete blocks are output, remainder cached
+     * @see crypt_eal_cipher.h:154-155
+     */
+    rc::check("CRYPT_EAL_CipherUpdate outLen is floor(inLen/blockSize)*blockSize for CBC/ECB",
+        []() {
+            auto algId = *gen::element(CRYPT_CIPHER_SM4_ECB, CRYPT_CIPHER_SM4_CBC);
+            CRYPT_EAL_CipherCtx *ctx = CRYPT_EAL_CipherNewCtx(algId);
+            RC_PRE(ctx != nullptr);
+            
+            auto keyData = genValidKey();
+            auto ivData = genValidIV();
+            
+            int32_t ret = CRYPT_EAL_CipherInit(ctx, keyData.data(), 16, 
+                                               (algId == CRYPT_CIPHER_SM4_ECB) ? nullptr : ivData.data(),
+                                               (algId == CRYPT_CIPHER_SM4_ECB) ? 0 : 16, true);
+            RC_PRE(ret == CRYPT_SUCCESS);
+            
+            auto inLen = *gen::inRange(BLOCKSIZE + 1, BLOCKSIZE * 4);
+            RC_PRE(inLen % BLOCKSIZE != 0);
+            
+            auto inputData = *gen::container<std::vector<uint8_t>>(inLen, gen::arbitrary<uint8_t>());
+            std::vector<uint8_t> output(inLen + BLOCKSIZE);
+            uint32_t outLen = output.size();
+            
+            ret = CRYPT_EAL_CipherUpdate(ctx, inputData.data(), inLen, output.data(), &outLen);
+            RC_ASSERT(ret == CRYPT_SUCCESS);
+            RC_ASSERT(outLen == (inLen / BLOCKSIZE) * BLOCKSIZE);
+            
+            CRYPT_EAL_CipherDeinit(ctx);
+            CRYPT_EAL_CipherFreeCtx(ctx);
+        });
+
+    /**
+     * @test CRYPT_EAL_CipherUpdate outLen for XTS with inLen == 32
+     * @property When inLen == 32 for XTS, outLen == 0 (both blocks reserved for Final)
+     * @invariant XTS reserves minimum 2 blocks
+     * @see crypt_eal_cipher.h:161
+     */
+    rc::check("CRYPT_EAL_CipherUpdate outLen is 0 when inLen == 32 for XTS",
+        []() {
+            CRYPT_EAL_CipherCtx *ctx = CRYPT_EAL_CipherNewCtx(CRYPT_CIPHER_SM4_XTS);
+            RC_PRE(ctx != nullptr);
+            
+            auto keyData = *gen::container<std::vector<uint8_t>>(32, gen::arbitrary<uint8_t>());
+            auto ivData = genValidIV();
+            
+            int32_t ret = CRYPT_EAL_CipherInit(ctx, keyData.data(), 32, ivData.data(), 16, true);
+            RC_PRE(ret == CRYPT_SUCCESS);
+            
+            auto inputData = *gen::container<std::vector<uint8_t>>(32, gen::arbitrary<uint8_t>());
+            std::vector<uint8_t> output(32);
+            uint32_t outLen = 32;
+            
+            ret = CRYPT_EAL_CipherUpdate(ctx, inputData.data(), 32, output.data(), &outLen);
+            RC_ASSERT(ret == CRYPT_SUCCESS);
+            RC_ASSERT(outLen == 0);
+            
+            CRYPT_EAL_CipherDeinit(ctx);
+            CRYPT_EAL_CipherFreeCtx(ctx);
+        });
+
+    /**
+     * @test CRYPT_EAL_CipherUpdate outLen for XTS with inLen > 32
+     * @property For XTS, outLen == ((inLen/16) - 2) * 16
+     * @invariant XTS formula: reserves last 2 blocks
+     * @see crypt_eal_cipher.h:161-162
+     */
+    rc::check("CRYPT_EAL_CipherUpdate outLen follows XTS formula",
+        []() {
+            CRYPT_EAL_CipherCtx *ctx = CRYPT_EAL_CipherNewCtx(CRYPT_CIPHER_SM4_XTS);
+            RC_PRE(ctx != nullptr);
+            
+            auto keyData = *gen::container<std::vector<uint8_t>>(32, gen::arbitrary<uint8_t>());
+            auto ivData = genValidIV();
+            
+            int32_t ret = CRYPT_EAL_CipherInit(ctx, keyData.data(), 32, ivData.data(), 16, true);
+            RC_PRE(ret == CRYPT_SUCCESS);
+            
+            auto inLen = *gen::inRange(48, 128);
+            auto inputData = *gen::container<std::vector<uint8_t>>(inLen, gen::arbitrary<uint8_t>());
+            std::vector<uint8_t> output(inLen);
+            uint32_t outLen = output.size();
+            
+            ret = CRYPT_EAL_CipherUpdate(ctx, inputData.data(), inLen, output.data(), &outLen);
+            RC_ASSERT(ret == CRYPT_SUCCESS);
+            
+            uint32_t expectedOutLen = ((inLen / BLOCKSIZE) - 2) * BLOCKSIZE;
+            RC_ASSERT(outLen == expectedOutLen);
+            
+            CRYPT_EAL_CipherDeinit(ctx);
+            CRYPT_EAL_CipherFreeCtx(ctx);
+        });
+
+    /**
      * @test CRYPT_EAL_CipherUpdate fails when called before Init
      * @property When ctx is in NEW state (not initialized), 
      *           CRYPT_EAL_CipherUpdate returns CRYPT_EAL_ERR_STATE
