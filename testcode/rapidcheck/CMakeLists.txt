@@ -293,6 +293,29 @@ target_link_libraries(rapidcheck_eal_aes_init_test
 )
 
 # =============================================================================
+# EAL Cipher Update Tests (PUBLIC API - CRYPT_EAL_CipherUpdate)
+# Generalizes SDV_CRYPTO_SM4_UPDATE_API_TC001
+# =============================================================================
+add_executable(rapidcheck_cipher_update_test rapidcheck_cipher_update_test.cpp)
+target_include_directories(rapidcheck_cipher_update_test PRIVATE ${TEST_INCLUDE_DIRS})
+target_compile_definitions(rapidcheck_cipher_update_test PRIVATE
+    HITLS_CRYPTO_SM4
+    HITLS_CRYPTO_ECB
+    HITLS_CRYPTO_CBC
+    HITLS_CRYPTO_CTR
+    HITLS_CRYPTO_XTS
+    HITLS_CRYPTO_EAL
+    HITLS_CRYPTO_CIPHER
+    HITLS_CRYPTO_PROVIDER
+)
+target_link_libraries(rapidcheck_cipher_update_test
+    rapidcheck
+    ${openHiTLS_SRC}/build/libhitls_crypto.a
+    ${openHiTLS_SRC}/build/libhitls_bsl.a
+    ${openHiTLS_SRC}/platform/Secure_C/lib/libboundscheck.a
+)
+
+# =============================================================================
 # AES OpenSSL Reference Model Tests (Differential Testing)
 # Generalizes SDV_CRYPTO_AES_ENCRYPT_FUNC_TC001 using OpenSSL as oracle
 # =============================================================================
@@ -358,4 +381,5 @@ add_test(NAME RapidCheck_Rand COMMAND rapidcheck_rand_test)
 add_test(NAME RapidCheck_Edge COMMAND rapidcheck_edge_test)
 # add_test(NAME RapidCheck_HMAC COMMAND rapidcheck_hmac_test)
 add_test(NAME RapidCheck_AES_INIT COMMAND rapidcheck_eal_aes_init_test)
+add_test(NAME RapidCheck_Cipher_Update COMMAND rapidcheck_cipher_update_test)
 add_test(NAME RapidCheck_AES_OpenSSL_Ref COMMAND rapidcheck_aes_openssl_ref_test)
