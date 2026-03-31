@@ -1,3 +1,5 @@
+include(FetchContent)
+
 cmake_minimum_required(VERSION 3.16 FATAL_ERROR)
 project(openHiTLS_RapidCheck)
 
@@ -8,10 +10,14 @@ set(openHiTLS_SRC "${PROJECT_SOURCE_DIR}/../..")
 
 option(RAPIDCHECK_BUILD_TESTS "Build RapidCheck tests" OFF)
 
-add_subdirectory(
-    /Users/thanhtoantnt/workspace/opencode-demo/rapidcheck
-    ${CMAKE_BINARY_DIR}/rapidcheck-build
+FetchContent_Declare(
+    rapidcheck
+    GIT_REPOSITORY https://github.com/emil-e/rapidcheck.git
+    GIT_TAG master  # or a specific tag like v1.0.0
 )
+
+FetchContent_MakeAvailable(rapidcheck)
+
 
 set(TEST_INCLUDE_DIRS
     ${openHiTLS_SRC}/include
