@@ -225,18 +225,18 @@ run_tests() {
     local TESTS_TO_RUN=("$@")
     
     if [ ${#TESTS_TO_RUN[@]} -eq 0 ]; then
-        TESTS_TO_RUN=("aes" "hash" "sha2" "sm4" "bn" "base64" "opt" "md5" "sha1" "chacha20" "buffer")
+        TESTS_TO_RUN=("aes" "hash" "sha2" "sm4" "bn" "base64" "opt" "md5" "sha1" "chacha20" "buffer" "eal_aes_init")
     fi
     
     print_banner
     
     for test in "${TESTS_TO_RUN[@]}"; do
         case "$test" in
-            aes|hash|sha2|sm4|bn|base64|opt|md5|sha1|chacha20|buffer)
+            aes|hash|sha2|sm4|bn|base64|opt|md5|sha1|chacha20|buffer|eal_aes_init)
                 run_single_test "$test"
                 ;;
             all)
-                run_tests aes hash sha2 sm4 bn base64 opt md5 sha1 chacha20 buffer
+                run_tests aes hash sha2 sm4 bn base64 opt md5 sha1 chacha20 buffer eal_aes_init
                 ;;
             *)
                 echo -e "${YELLOW}[WARN] Unknown test: $test${NC}"

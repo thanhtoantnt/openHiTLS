@@ -254,7 +254,29 @@ target_compile_definitions(rapidcheck_edge_test PRIVATE
     HITLS_CRYPTO_SHA2
     HITLS_CRYPTO_PROVIDER
 )
-target_link_libraries(rapidcheck_edge_test 
+target_link_libraries(rapidcheck_edge_test
+    rapidcheck
+    ${openHiTLS_SRC}/build/libhitls_crypto.a
+    ${openHiTLS_SRC}/build/libhitls_bsl.a
+    ${openHiTLS_SRC}/platform/Secure_C/lib/libboundscheck.a
+)
+
+# =============================================================================
+# EAL AES Init Tests (PUBLIC API - CRYPT_EAL_CipherInit)
+# Generalizes SDV_CRYPTO_AES_INIT_API_TC001
+# =============================================================================
+add_executable(rapidcheck_eal_aes_init_test rapidcheck_eal_aes_init_test.cpp)
+target_include_directories(rapidcheck_eal_aes_init_test PRIVATE ${TEST_INCLUDE_DIRS})
+target_compile_definitions(rapidcheck_eal_aes_init_test PRIVATE
+    HITLS_CRYPTO_AES
+    HITLS_CRYPTO_ECB
+    HITLS_CRYPTO_CBC
+    HITLS_CRYPTO_CTR
+    HITLS_CRYPTO_EAL
+    HITLS_CRYPTO_CIPHER
+    HITLS_CRYPTO_PROVIDER
+)
+target_link_libraries(rapidcheck_eal_aes_init_test
     rapidcheck
     ${openHiTLS_SRC}/build/libhitls_crypto.a
     ${openHiTLS_SRC}/build/libhitls_bsl.a
@@ -298,3 +320,4 @@ add_test(NAME RapidCheck_Buffer COMMAND rapidcheck_buffer_test)
 add_test(NAME RapidCheck_Rand COMMAND rapidcheck_rand_test)
 add_test(NAME RapidCheck_Edge COMMAND rapidcheck_edge_test)
 # add_test(NAME RapidCheck_HMAC COMMAND rapidcheck_hmac_test)
+add_test(NAME RapidCheck_AES_INIT COMMAND rapidcheck_eal_aes_init_test)
