@@ -223,6 +223,40 @@ target_link_libraries(rapidcheck_buffer_test
 )
 
 # =============================================================================
+# Random Number Tests
+# =============================================================================
+add_executable(rapidcheck_rand_test rapidcheck_rand_test.cpp)
+target_include_directories(rapidcheck_rand_test PRIVATE ${TEST_INCLUDE_DIRS})
+target_compile_definitions(rapidcheck_rand_test PRIVATE
+    HITLS_CRYPTO_EAL
+    HITLS_CRYPTO_DRBG
+    HITLS_CRYPTO_RAND
+    HITLS_CRYPTO_PROVIDER
+)
+target_link_libraries(rapidcheck_rand_test 
+    rapidcheck
+    ${openHiTLS_SRC}/build/libhitls_crypto.a
+    ${openHiTLS_SRC}/build/libhitls_bsl.a
+    ${openHiTLS_SRC}/platform/Secure_C/lib/libboundscheck.a
+)
+
+# =============================================================================
+# Edge Case Tests
+# =============================================================================
+add_executable(rapidcheck_edge_test rapidcheck_edge_test.cpp)
+target_include_directories(rapidcheck_edge_test PRIVATE ${TEST_INCLUDE_DIRS})
+target_compile_definitions(rapidcheck_edge_test PRIVATE
+    HITLS_CRYPTO_AES
+    HITLS_CRYPTO_ECB
+)
+target_link_libraries(rapidcheck_edge_test 
+    rapidcheck
+    ${openHiTLS_SRC}/build/libhitls_crypto.a
+    ${openHiTLS_SRC}/build/libhitls_bsl.a
+    ${openHiTLS_SRC}/platform/Secure_C/lib/libboundscheck.a
+)
+
+# =============================================================================
 # HMAC Tests (disabled - C++ keyword conflict)
 # =============================================================================
 # Note: rapidcheck_hmac_test is disabled because openHiTLS uses 'export' as a struct member name
@@ -256,4 +290,6 @@ add_test(NAME RapidCheck_MD5 COMMAND rapidcheck_md5_test)
 add_test(NAME RapidCheck_SHA1 COMMAND rapidcheck_sha1_test)
 add_test(NAME RapidCheck_ChaCha20 COMMAND rapidcheck_chacha20_test)
 add_test(NAME RapidCheck_Buffer COMMAND rapidcheck_buffer_test)
+add_test(NAME RapidCheck_Rand COMMAND rapidcheck_rand_test)
+add_test(NAME RapidCheck_Edge COMMAND rapidcheck_edge_test)
 # add_test(NAME RapidCheck_HMAC COMMAND rapidcheck_hmac_test)
