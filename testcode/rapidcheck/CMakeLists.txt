@@ -10,6 +10,9 @@ set(openHiTLS_SRC "${PROJECT_SOURCE_DIR}/../..")
 
 option(RAPIDCHECK_BUILD_TESTS "Build RapidCheck tests" OFF)
 
+# Find OpenSSL for reference model testing (differential testing)
+find_package(OpenSSL REQUIRED)
+
 FetchContent_Declare(
     rapidcheck
     GIT_REPOSITORY https://github.com/emil-e/rapidcheck.git
@@ -290,6 +293,34 @@ target_link_libraries(rapidcheck_eal_aes_init_test
 )
 
 # =============================================================================
+# AES OpenSSL Reference Model Tests (Differential Testing)
+# Generalizes SDV_CRYPTO_AES_ENCRYPT_FUNC_TC001 using OpenSSL as oracle
+# =============================================================================
+add_executable(rapidcheck_aes_openssl_ref_test rapidcheck_aes_openssl_ref_test.cpp)
+target_include_directories(rapidcheck_aes_openssl_ref_test PRIVATE 
+    ${TEST_INCLUDE_DIRS}
+    ${OPENSSL_INCLUDE_DIR}
+)
+target_compile_definitions(rapidcheck_aes_openssl_ref_test PRIVATE
+    HITLS_CRYPTO_AES
+    HITLS_CRYPTO_ECB
+    HITLS_CRYPTO_CBC
+    HITLS_CRYPTO_CTR
+    HITLS_CRYPTO_GCM
+    HITLS_CRYPTO_EAL
+    HITLS_CRYPTO_CIPHER
+    HITLS_CRYPTO_PROVIDER
+)
+target_link_libraries(rapidcheck_aes_openssl_ref_test
+    rapidcheck
+    OpenSSL::SSL
+    OpenSSL::Crypto
+    ${openHiTLS_SRC}/build/libhitls_crypto.a
+    ${openHiTLS_SRC}/build/libhitls_bsl.a
+    ${openHiTLS_SRC}/platform/Secure_C/lib/libboundscheck.a
+)
+
+# =============================================================================
 # HMAC Tests (disabled - C++ keyword conflict)
 # =============================================================================
 # Note: rapidcheck_hmac_test is disabled because openHiTLS uses 'export' as a struct member name
@@ -327,3 +358,4 @@ add_test(NAME RapidCheck_Rand COMMAND rapidcheck_rand_test)
 add_test(NAME RapidCheck_Edge COMMAND rapidcheck_edge_test)
 # add_test(NAME RapidCheck_HMAC COMMAND rapidcheck_hmac_test)
 add_test(NAME RapidCheck_AES_INIT COMMAND rapidcheck_eal_aes_init_test)
+add_test(NAME RapidCheck_AES_OpenSSL_Ref COMMAND rapidcheck_aes_openssl_ref_test)
