@@ -281,3 +281,67 @@ This skill is step 1 in the PBT synthesis pipeline:
 - **Ignoring error paths** - Every error is a test case
 - **Missing API patterns** - Init/Update/Final needs incremental tests
 - **No security properties** - Crypto needs key sensitivity tests
+
+## Important: Test Public APIs Only
+
+**DO NOT test internal functions directly.** openHiTLS uses a layered architecture:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  PUBLIC API (Test These)                                    │
+│  CRYPT_EAL_CipherUpdate, CRYPT_EAL_MdUpdate, etc.           │
+│  ✓ Has input validation                                     │
+│  ✓ Returns error codes for invalid inputs                   │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│  INTERNAL API (Do NOT Test Directly)                        │
+│  CRYPT_AES_Encrypt, CRYPT_SM3_Update, etc.                  │
+│  ✗ No input validation (assumes upper layer validated)      │
+│  ✗ May crash on NULL inputs (by design)                     │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Public vs Internal API Patterns
+
+| Public API (Test These) | Internal API (Do NOT Test) |
+|------------------------|---------------------------|
+| `CRYPT_EAL_CipherNewCtx` | `CRYPT_AES_Encrypt` |
+| `CRYPT_EAL_CipherInit` | `CRYPT_AES_Decrypt` |
+| `CRYPT_EAL_CipherUpdate` | `CRYPT_SM3_Update` |
+| `CRYPT_EAL_CipherFinal` | `CRYPT_SM3_Final` |
+| `CRYPT_EAL_MdNewCtx` | `CRYPT_AES_SetEncryptKey128` |
+| `CRYPT_EAL_MdUpdate` | Internal helper functions |
+| `CRYPT_EAL_MdFinal` | |
+
+### How to Identify Public APIs
+
+1. **Location**: Public APIs are in `include/crypto/crypt_eal_*.h`
+2. **Naming**: Public APIs start with `CRYPT_EAL_` prefix
+3. **Documentation**: Public APIs have full doxygen documentation
+4. **Error handling**: Public APIs return error codes like `CRYPT_NULL_INPUT`
+
+### Why Not Test Internal APIs
+
+1. **They assume validated inputs** - Upper layers already validated
+2. **No error handling overhead** - Performance optimization for crypto
+3. **Testing them directly is testing implementation details**
+4. **May crash on NULL - this is expected, not a bug**
+
+### Correct Testing Pattern
+
+```cpp
+// WRONG - Testing internal function
+rc::check("AES encrypt with null key",
+    []() {
+        CRYPT_AES_Encrypt(NULL, ...);  // Internal function, may crash
+    });
+
+// CORRECT - Testing public API
+rc::check("Cipher update with null ctx",
+    []() {
+        CRYPT_EAL_CipherUpdate(NULL, ...);  // Public API, returns error
+        RC_ASSERT(ret == CRYPT_NULL_INPUT);
+    });
+```

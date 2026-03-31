@@ -248,6 +248,11 @@ target_include_directories(rapidcheck_edge_test PRIVATE ${TEST_INCLUDE_DIRS})
 target_compile_definitions(rapidcheck_edge_test PRIVATE
     HITLS_CRYPTO_AES
     HITLS_CRYPTO_ECB
+    HITLS_CRYPTO_EAL
+    HITLS_CRYPTO_CIPHER
+    HITLS_CRYPTO_MD
+    HITLS_CRYPTO_SHA2
+    HITLS_CRYPTO_PROVIDER
 )
 target_link_libraries(rapidcheck_edge_test 
     rapidcheck

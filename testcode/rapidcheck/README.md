@@ -4,6 +4,46 @@ This directory contains property-based tests for openHiTLS using the [RapidCheck
 
 Each test file includes annotations linking to the original unit tests that the property-based tests generalize. Look for `@generalizes` and `@see` tags in the source code.
 
+## IMPORTANT: Test Public APIs Only
+
+**DO NOT test internal functions directly.** openHiTLS uses a layered architecture:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  PUBLIC API (Test These)                                    │
+│  CRYPT_EAL_CipherUpdate, CRYPT_EAL_MdUpdate, etc.           │
+│  ✓ Has input validation                                     │
+│  ✓ Returns error codes for invalid inputs                   │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│  INTERNAL API (Do NOT Test Directly)                        │
+│  CRYPT_AES_Encrypt, CRYPT_SM3_Update, etc.                  │
+│  ✗ No input validation (assumes upper layer validated)      │
+│  ✗ May crash on NULL inputs (by design)                     │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Public vs Internal API
+
+| Public API (Test These) | Internal API (Do NOT Test) |
+|------------------------|---------------------------|
+| `CRYPT_EAL_CipherNewCtx` | `CRYPT_AES_Encrypt` |
+| `CRYPT_EAL_CipherInit` | `CRYPT_AES_Decrypt` |
+| `CRYPT_EAL_CipherUpdate` | `CRYPT_SM3_Update` |
+| `CRYPT_EAL_CipherFinal` | `CRYPT_SM3_Final` |
+| `CRYPT_EAL_MdNewCtx` | `CRYPT_AES_SetEncryptKey128` |
+| `CRYPT_EAL_MdUpdate` | Internal helper functions |
+| `CRYPT_EAL_MdFinal` | |
+
+### Why Not Test Internal APIs
+
+1. **They assume validated inputs** - Upper layers already validated
+2. **No error handling overhead** - Performance optimization for crypto
+3. **Testing them directly is testing implementation details**
+4. **May crash on NULL - this is expected, not a bug**
+
 ## What is Property-Based Testing?
 
 Property-based testing is a testing methodology where you define **properties** (invariants) that should always hold true for your code, rather than writing specific test cases with fixed inputs. The testing framework then automatically generates random test inputs to try to find cases where the property fails.
