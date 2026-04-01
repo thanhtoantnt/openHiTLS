@@ -207,6 +207,152 @@ bool requiresIV(CRYPT_CIPHER_AlgId algId) {
 }
 
 int main() {
+    /**
+     * @test OpenSSL XTS-128 Update behavior with 32-byte input
+     * @property OpenSSL XTS Update processes all data immediately (no block reservation)
+     * @context This test validates that the XTS block reservation bug found in openHiTLS
+     *          is NOT present in OpenSSL. OpenSSL correctly processes all input data
+     *          without reserving blocks for Final.
+     * 
+     * @rationale According to IEEE 1619 and OpenSSL implementation:
+     *            - XTS mode can process any amount of data >= 16 bytes
+     *            - Update should output all processed data immediately
+     *            - Final is only needed for cleanup (outputs 0 bytes for XTS)
+     *            
+     * @expected OpenSSL behavior:
+     *           - Update(inLen=32) returns outLen=32 (processes all data)
+     *           - Final() returns outLen=0 (no data left to output)
+     *           
+     * @contrast openHiTLS bug:
+     *           - Documentation claims Update should reserve 2 blocks
+     *           - Implementation actually outputs all data (like OpenSSL)
+     *           - This creates a documentation/implementation mismatch
+     *           
+     * @see include/crypto/crypt_eal_cipher.h:159-162 (openHiTLS documentation)
+     * @see crypto/modes/src/modes.c:542 (openHiTLS implementation bug)
+     */
+    rc::check("OpenSSL AES-128-XTS Update processes 32 bytes immediately (no reservation)",
+        []() {
+            // Generate 32-byte key (XTS requires double key: 16 bytes for each half)
+            auto keyData = *gen::container<std::vector<uint8_t>>(32, gen::arbitrary<uint8_t>());
+            
+            // Generate 16-byte IV/tweak
+            auto ivData = *gen::container<std::vector<uint8_t>>(16, gen::arbitrary<uint8_t>());
+            
+            // Generate exactly 32 bytes of plaintext (2 blocks)
+            auto plaintext = *gen::container<std::vector<uint8_t>>(32, gen::arbitrary<uint8_t>());
+            
+            // Create OpenSSL XTS cipher
+            EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
+            RC_PRE(ctx != nullptr);
+            
+            // Initialize AES-128-XTS encryption
+            int ret = EVP_EncryptInit_ex(ctx, EVP_aes_128_xts(), nullptr, 
+                                          keyData.data(), ivData.data());
+            RC_PRE(ret == 1);
+            
+            // Update with 32 bytes
+            std::vector<uint8_t> ciphertext(32 + EVP_MAX_BLOCK_LENGTH);
+            int updateLen = 0;
+            ret = EVP_EncryptUpdate(ctx, ciphertext.data(), &updateLen, 
+                                    plaintext.data(), 32);
+            RC_PRE(ret == 1);
+            
+            // Final
+            int finalLen = 0;
+            ret = EVP_EncryptFinal_ex(ctx, ciphertext.data() + updateLen, &finalLen);
+            RC_PRE(ret == 1);
+            
+            EVP_CIPHER_CTX_free(ctx);
+            
+            // OpenSSL processes all 32 bytes in Update (no reservation)
+            RC_ASSERT(updateLen == 32);
+            RC_ASSERT(finalLen == 0);
+            RC_ASSERT(updateLen + finalLen == 32);
+        });
+
+    /**
+     * @test OpenSSL XTS-256 Update behavior with 32-byte input
+     * @property Same as XTS-128 but with 256-bit key
+     */
+    rc::check("OpenSSL AES-256-XTS Update processes 32 bytes immediately (no reservation)",
+        []() {
+            // Generate 64-byte key (XTS requires double key: 32 bytes for each half)
+            auto keyData = *gen::container<std::vector<uint8_t>>(64, gen::arbitrary<uint8_t>());
+            
+            // Generate 16-byte IV/tweak
+            auto ivData = *gen::container<std::vector<uint8_t>>(16, gen::arbitrary<uint8_t>());
+            
+            // Generate exactly 32 bytes of plaintext (2 blocks)
+            auto plaintext = *gen::container<std::vector<uint8_t>>(32, gen::arbitrary<uint8_t>());
+            
+            // Create OpenSSL XTS cipher
+            EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
+            RC_PRE(ctx != nullptr);
+            
+            // Initialize AES-256-XTS encryption
+            int ret = EVP_EncryptInit_ex(ctx, EVP_aes_256_xts(), nullptr, 
+                                          keyData.data(), ivData.data());
+            RC_PRE(ret == 1);
+            
+            // Update with 32 bytes
+            std::vector<uint8_t> ciphertext(32 + EVP_MAX_BLOCK_LENGTH);
+            int updateLen = 0;
+            ret = EVP_EncryptUpdate(ctx, ciphertext.data(), &updateLen, 
+                                    plaintext.data(), 32);
+            RC_PRE(ret == 1);
+            
+            // Final
+            int finalLen = 0;
+            ret = EVP_EncryptFinal_ex(ctx, ciphertext.data() + updateLen, &finalLen);
+            RC_PRE(ret == 1);
+            
+            EVP_CIPHER_CTX_free(ctx);
+            
+            // OpenSSL processes all 32 bytes in Update (no reservation)
+            RC_ASSERT(updateLen == 32);
+            RC_ASSERT(finalLen == 0);
+            RC_ASSERT(updateLen + finalLen == 32);
+        });
+
+    /**
+     * @test OpenSSL XTS with various input lengths
+     * @property OpenSSL XTS Update always outputs all input data (no reservation)
+     */
+    rc::check("OpenSSL AES-128-XTS Update processes all input lengths correctly",
+        []() {
+            auto keyData = *gen::container<std::vector<uint8_t>>(32, gen::arbitrary<uint8_t>());
+            auto ivData = *gen::container<std::vector<uint8_t>>(16, gen::arbitrary<uint8_t>());
+            
+            // Generate random length >= 16 bytes (XTS minimum)
+            auto plaintextLen = *gen::inRange(16, 256);
+            auto plaintext = *gen::container<std::vector<uint8_t>>(plaintextLen, gen::arbitrary<uint8_t>());
+            
+            EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
+            RC_PRE(ctx != nullptr);
+            
+            int ret = EVP_EncryptInit_ex(ctx, EVP_aes_128_xts(), nullptr, 
+                                          keyData.data(), ivData.data());
+            RC_PRE(ret == 1);
+            
+            std::vector<uint8_t> ciphertext(plaintextLen + EVP_MAX_BLOCK_LENGTH);
+            int updateLen = 0;
+            ret = EVP_EncryptUpdate(ctx, ciphertext.data(), &updateLen, 
+                                    plaintext.data(), plaintextLen);
+            RC_PRE(ret == 1);
+            
+            int finalLen = 0;
+            ret = EVP_EncryptFinal_ex(ctx, ciphertext.data() + updateLen, &finalLen);
+            RC_PRE(ret == 1);
+            
+            EVP_CIPHER_CTX_free(ctx);
+            
+            // OpenSSL always processes all data in Update for XTS
+            RC_ASSERT(updateLen == plaintextLen);
+            RC_ASSERT(finalLen == 0);
+            RC_ASSERT(updateLen + finalLen == plaintextLen);
+        });
+
     // Test algorithms to cover
     std::vector<CRYPT_CIPHER_AlgId> testAlgorithms = {
         CRYPT_CIPHER_AES128_ECB,
