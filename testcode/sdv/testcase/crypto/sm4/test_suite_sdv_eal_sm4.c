@@ -1825,3 +1825,72 @@ EXIT:
     CRYPT_EAL_CipherFreeCtx(ctx);
 #endif
 }
+/* END_CASE */
+
+/**
+ * @test  SDV_CRYPTO_SM4_XTS_UPDATE_PBT_TC001
+ * @title  XTS mode Update output length should reserve 2 blocks for Final
+ * @precon Registering memory-related functions.
+ * @brief
+ *    This test reproduces a failure found by RapidCheck property-based testing.
+ *    The property being tested: For XTS mode, CRYPT_EAL_CipherUpdate should reserve
+ *    at least 2 blocks (32 bytes) for the Final operation. When inLen == 32,
+ *    outLen should be 0 (all data reserved for Final).
+ *    
+ *    Concrete inputs from RapidCheck:
+ *    - Key: 32 bytes, all zeros except last byte is 1
+ *    - IV: 16 bytes, all zeros
+ *    - Input: 32 bytes, all zeros
+ *    
+ *    Expected behavior: outLen == 0 (XTS reserves 2 blocks for Final)
+ *    Actual behavior (bug): outLen == 32 (violates XTS invariant)
+ *    
+ *    1.Create the context ctx with CRYPT_CIPHER_SM4_XTS. Expected result 1 is obtained.
+ *    2.Call the Init interface with 32-byte key and 16-byte IV. Expected result 2 is obtained.
+ *    3.Call the Update interface with 32-byte input. Expected result 3 is obtained.
+ *    4.Check that outLen is 0 (XTS should reserve 2 blocks for Final).
+ * @expect
+ *    1.The creation is successful and the ctx is not empty.
+ *    2.The init is successful, return CRYPT_SUCCESS.
+ *    3.The update is successful, return CRYPT_SUCCESS.
+ *    4.outLen == 0 (XTS reserves 2 blocks for Final).
+ * @note This test exposes a bug where XTS Update does not properly reserve blocks for Final.
+ */
+/* BEGIN_CASE */
+void SDV_CRYPTO_SM4_XTS_UPDATE_PBT_TC001(void)
+{
+    TestMemInit();
+    int32_t ret;
+    
+    uint8_t key[32] = {0, 0, 0, 0, 0, 0, 0, 0,
+                       0, 0, 0, 0, 0, 0, 0, 0,
+                       0, 0, 0, 0, 0, 0, 0, 0,
+                       0, 0, 0, 0, 0, 0, 0, 1};
+    
+    uint8_t iv[16] = {0, 0, 0, 0, 0, 0, 0, 0,
+                      0, 0, 0, 0, 0, 0, 0, 0};
+    
+    uint8_t input[32] = {0, 0, 0, 0, 0, 0, 0, 0,
+                         0, 0, 0, 0, 0, 0, 0, 0,
+                         0, 0, 0, 0, 0, 0, 0, 0,
+                         0, 0, 0, 0, 0, 0, 0, 0};
+    
+    uint8_t output[32] = {0};
+    uint32_t outLen = 32;
+    
+    CRYPT_EAL_CipherCtx *ctx = CRYPT_EAL_CipherNewCtx(CRYPT_CIPHER_SM4_XTS);
+    ASSERT_TRUE(ctx != NULL);
+    
+    ret = CRYPT_EAL_CipherInit(ctx, key, 32, iv, 16, true);
+    ASSERT_TRUE(ret == CRYPT_SUCCESS);
+    
+    ret = CRYPT_EAL_CipherUpdate(ctx, input, 32, output, &outLen);
+    ASSERT_TRUE(ret == CRYPT_SUCCESS);
+    
+    ASSERT_TRUE(outLen == 0);
+    
+EXIT:
+    CRYPT_EAL_CipherDeinit(ctx);
+    CRYPT_EAL_CipherFreeCtx(ctx);
+}
+/* END_CASE */
