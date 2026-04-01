@@ -336,6 +336,33 @@ void test_xts_reserves_2_blocks() {
         });
 }
 
+void test_xts_outlen_multiple_of_blocksize() {
+    rc::check("CRYPT_EAL_CipherUpdate outLen is multiple of BLOCKSIZE for XTS",
+        []() {
+            CRYPT_EAL_CipherCtx *ctx = CRYPT_EAL_CipherNewCtx(CRYPT_CIPHER_SM4_XTS);
+            RC_PRE(ctx != nullptr);
+            
+            auto keyData = *gen::container<std::vector<uint8_t>>(32, gen::arbitrary<uint8_t>());
+            auto ivData = genValidIV();
+            
+            int32_t ret = CRYPT_EAL_CipherInit(ctx, keyData.data(), 32, ivData.data(), 16, true);
+            RC_PRE(ret == CRYPT_SUCCESS);
+            
+            auto inLen = *gen::inRange(32, 128);
+            auto inputData = *gen::container<std::vector<uint8_t>>(inLen, gen::arbitrary<uint8_t>());
+            std::vector<uint8_t> output(inputData.size());
+            uint32_t outLen = output.size();
+            
+            ret = CRYPT_EAL_CipherUpdate(ctx, inputData.data(), inputData.size(), output.data(), &outLen);
+            RC_ASSERT(ret == CRYPT_SUCCESS);
+            
+            RC_ASSERT(outLen % BLOCKSIZE == 0);
+            
+            CRYPT_EAL_CipherDeinit(ctx);
+            CRYPT_EAL_CipherFreeCtx(ctx);
+        });
+}
+
 void test_outlen_non_negative() {
     rc::check("CRYPT_EAL_CipherUpdate outLen is always non-negative",
         []() {
@@ -629,6 +656,7 @@ std::map<std::string, std::function<void()>> testRegistry = {
     {"ctr_outlen_equals_inlen", test_ctr_outlen_equals_inlen},
     {"block_cipher_outlen_invariant", test_block_cipher_outlen_invariant},
     {"xts_reserves_2_blocks", test_xts_reserves_2_blocks},
+    {"xts_outlen_multiple_of_blocksize", test_xts_outlen_multiple_of_blocksize},
     {"outlen_non_negative", test_outlen_non_negative},
     {"cbc_small_input", test_cbc_small_input},
     {"cbc_exact_block", test_cbc_exact_block},
