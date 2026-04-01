@@ -252,6 +252,85 @@ Add to your CI pipeline:
     ctest --output-on-failure
 ```
 
+## Test Execution
+
+### Running Tests
+
+Most test files support command-line arguments for selective test execution:
+
+```bash
+# Run all tests
+./rapidcheck_cipher_update_test
+
+# List available tests
+./rapidcheck_cipher_update_test --list
+
+# Run specific test(s)
+./rapidcheck_cipher_update_test xts_32_bytes
+./rapidcheck_cipher_update_test null_ctx ctr_outlen_equals_inlen
+
+# Get help
+./rapidcheck_cipher_update_test --help
+```
+
+### Available Tests for Cipher Update
+
+The `rapidcheck_cipher_update_test` has 21 individual tests:
+
+| Test Name | Description |
+|-----------|-------------|
+| `null_ctx` | Tests NULL context handling |
+| `null_in_nonzero_len` | Tests NULL input with non-zero length |
+| `null_in_zero_len` | Tests NULL input with zero length |
+| `null_out` | Tests NULL output buffer |
+| `null_outlen` | Tests NULL output length pointer |
+| `xts_small_input` | Tests XTS with input < 32 bytes |
+| `non_xts_small_input` | Tests non-XTS modes with small input |
+| `all_valid_params` | Tests with all valid parameters |
+| `ctr_outlen_equals_inlen` | Tests CTR mode output length |
+| `block_cipher_outlen_invariant` | Tests block cipher output invariants |
+| `xts_reserves_2_blocks` | Tests XTS block reservation |
+| `outlen_non_negative` | Tests output length is non-negative |
+| `cbc_small_input` | Tests CBC with input < block size |
+| `cbc_exact_block` | Tests CBC with exact block size |
+| `cbc_non_block_multiple` | Tests CBC with non-block-multiple input |
+| `xts_32_bytes` | Tests XTS with exactly 32 bytes (**BUG FOUND**) |
+| `xts_formula` | Tests XTS output length formula |
+| `update_before_init` | Tests Update called before Init |
+| `update_after_final` | Tests Update called after Final |
+| `enc_dec` | Tests both encryption and decryption |
+| `multiple_updates` | Tests multiple sequential Update calls |
+
+### Debugging Failed Tests
+
+When a test fails, you can run it in isolation for easier debugging:
+
+```bash
+# 1. Run all tests to find failures
+./rapidcheck_cipher_update_test
+
+# 2. Run the specific failing test
+./rapidcheck_cipher_update_test xts_32_bytes
+
+# 3. Reproduce with the exact seed from the failure
+RC_PARAMS="seed=9023039774416759098" ./rapidcheck_cipher_update_test xts_32_bytes
+```
+
+## Known Issues
+
+### XTS Mode Bug
+
+The test `xts_32_bytes` currently **FAILS** and exposes a real bug:
+
+- **Expected**: `outLen == 0` (XTS should reserve 2 blocks for Final)
+- **Actual**: `outLen == 32` (implementation doesn't reserve blocks)
+- **Documentation**: Claims reservation should happen (see `crypt_eal_cipher.h:159-162`)
+- **Implementation**: Doesn't match documentation (see `modes.c:542`)
+
+This bug is specific to openHiTLS and does NOT affect OpenSSL (verified by `rapidcheck_aes_openssl_ref_test`).
+
+See `XTS_BUG_ANALYSIS.md` for detailed analysis.
+
 ## Comparison with DeepState
 
 | Feature | RapidCheck | DeepState |

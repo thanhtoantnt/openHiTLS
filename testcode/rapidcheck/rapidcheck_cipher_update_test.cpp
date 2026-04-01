@@ -15,12 +15,20 @@
  * - Different cipher algorithms (SM4 modes)
  * 
  * Property-based testing finds edge cases that fixed unit tests might miss.
+ * 
+ * Usage:
+ *   ./rapidcheck_cipher_update_test              # Run all tests
+ *   ./rapidcheck_cipher_update_test --list       # List all test names
+ *   ./rapidcheck_cipher_update_test test1 test2  # Run specific tests
  */
 
 #include <rapidcheck.h>
 #include <vector>
 #include <cstring>
 #include <cstdint>
+#include <iostream>
+#include <map>
+#include <functional>
 
 #include "hitls_build.h"
 #include "crypt_eal_cipher.h"
@@ -44,14 +52,9 @@ std::vector<uint8_t> genValidInput() {
     return *gen::container<std::vector<uint8_t>>(len, gen::arbitrary<uint8_t>());
 }
 
-int main() {
-    /**
-     * @test CRYPT_EAL_CipherUpdate null ctx returns CRYPT_NULL_INPUT
-     * @property When ctx is NULL, CRYPT_EAL_CipherUpdate returns CRYPT_NULL_INPUT
-     *           regardless of other parameters being valid
-     * @generalizes SDV_CRYPTO_SM4_UPDATE_API_TC001:step3 - "ctx is NULL"
-     * @see testcode/sdv/testcase/crypto/sm4/test_suite_sdv_eal_sm4.c:311
-     */
+// Test functions - each test is a separate function for easier debugging
+
+void test_null_ctx() {
     rc::check("CRYPT_EAL_CipherUpdate returns CRYPT_NULL_INPUT when ctx is NULL",
         []() {
             auto inputData = genValidInput();
@@ -62,14 +65,9 @@ int main() {
                                                  output.data(), &outLen);
             RC_ASSERT(ret == CRYPT_NULL_INPUT);
         });
+}
 
-    /**
-     * @test CRYPT_EAL_CipherUpdate null in with non-zero inLen returns CRYPT_NULL_INPUT
-     * @property When ctx is valid but in is NULL and inLen != 0,
-     *           CRYPT_EAL_CipherUpdate returns CRYPT_NULL_INPUT
-     * @generalizes SDV_CRYPTO_SM4_UPDATE_API_TC001:step4 - "in is NULL"
-     * @see testcode/sdv/testcase/crypto/sm4/test_suite_sdv_eal_sm4.c:314
-     */
+void test_null_in_nonzero_len() {
     rc::check("CRYPT_EAL_CipherUpdate returns CRYPT_NULL_INPUT when in is NULL and inLen != 0",
         []() {
             auto algId = *gen::element(CRYPT_CIPHER_SM4_ECB, CRYPT_CIPHER_SM4_CBC, 
@@ -94,14 +92,9 @@ int main() {
             CRYPT_EAL_CipherDeinit(ctx);
             CRYPT_EAL_CipherFreeCtx(ctx);
         });
+}
 
-    /**
-     * @test CRYPT_EAL_CipherUpdate null in with zero inLen returns CRYPT_SUCCESS
-     * @property When ctx is valid, in is NULL, and inLen == 0,
-     *           CRYPT_EAL_CipherUpdate returns CRYPT_SUCCESS
-     * @generalizes SDV_CRYPTO_SM4_UPDATE_API_TC001:step6 - "inLen is 0"
-     * @see testcode/sdv/testcase/crypto/sm4/test_suite_sdv_eal_sm4.c:321
-     */
+void test_null_in_zero_len() {
     rc::check("CRYPT_EAL_CipherUpdate returns CRYPT_SUCCESS when in is NULL and inLen is 0",
         []() {
             auto algId = *gen::element(CRYPT_CIPHER_SM4_ECB, CRYPT_CIPHER_SM4_CBC, 
@@ -126,14 +119,9 @@ int main() {
             CRYPT_EAL_CipherDeinit(ctx);
             CRYPT_EAL_CipherFreeCtx(ctx);
         });
+}
 
-    /**
-     * @test CRYPT_EAL_CipherUpdate null out returns CRYPT_NULL_INPUT
-     * @property When ctx is valid but out is NULL,
-     *           CRYPT_EAL_CipherUpdate returns CRYPT_NULL_INPUT
-     * @generalizes SDV_CRYPTO_SM4_UPDATE_API_TC001:step5 - "out is NULL"
-     * @see testcode/sdv/testcase/crypto/sm4/test_suite_sdv_eal_sm4.c:317
-     */
+void test_null_out() {
     rc::check("CRYPT_EAL_CipherUpdate returns CRYPT_NULL_INPUT when out is NULL",
         []() {
             auto algId = *gen::element(CRYPT_CIPHER_SM4_ECB, CRYPT_CIPHER_SM4_CBC, 
@@ -158,14 +146,9 @@ int main() {
             CRYPT_EAL_CipherDeinit(ctx);
             CRYPT_EAL_CipherFreeCtx(ctx);
         });
+}
 
-    /**
-     * @test CRYPT_EAL_CipherUpdate null outLen returns CRYPT_NULL_INPUT
-     * @property When ctx is valid but outLen is NULL,
-     *           CRYPT_EAL_CipherUpdate returns CRYPT_NULL_INPUT
-     * @generalizes SDV_CRYPTO_SM4_UPDATE_API_TC001:step7 - "outLen is NULL"
-     * @see testcode/sdv/testcase/crypto/sm4/test_suite_sdv_eal_sm4.c:331
-     */
+void test_null_outlen() {
     rc::check("CRYPT_EAL_CipherUpdate returns CRYPT_NULL_INPUT when outLen is NULL",
         []() {
             auto algId = *gen::element(CRYPT_CIPHER_SM4_ECB, CRYPT_CIPHER_SM4_CBC, 
@@ -190,13 +173,9 @@ int main() {
             CRYPT_EAL_CipherDeinit(ctx);
             CRYPT_EAL_CipherFreeCtx(ctx);
         });
+}
 
-    /**
-     * @test CRYPT_EAL_CipherUpdate with inLen=1 fails for XTS mode
-     * @property For SM4_XTS mode, inLen < 32 (two blocks) returns error
-     * @generalizes SDV_CRYPTO_SM4_UPDATE_API_TC001:step6 - "XTS algorithm fails"
-     * @see testcode/sdv/testcase/crypto/sm4/test_suite_sdv_eal_sm4.c:324-329
-     */
+void test_xts_small_input() {
     rc::check("CRYPT_EAL_CipherUpdate fails for XTS mode when inLen < 32",
         []() {
             CRYPT_EAL_CipherCtx *ctx = CRYPT_EAL_CipherNewCtx(CRYPT_CIPHER_SM4_XTS);
@@ -218,13 +197,9 @@ int main() {
             CRYPT_EAL_CipherDeinit(ctx);
             CRYPT_EAL_CipherFreeCtx(ctx);
         });
+}
 
-    /**
-     * @test CRYPT_EAL_CipherUpdate succeeds with inLen=1 for non-XTS modes
-     * @property For non-XTS modes (ECB, CBC, CTR), inLen=1 returns CRYPT_SUCCESS
-     * @generalizes SDV_CRYPTO_SM4_UPDATE_API_TC001:step6 - "non-XTS succeeds"
-     * @see testcode/sdv/testcase/crypto/sm4/test_suite_sdv_eal_sm4.c:324-329
-     */
+void test_non_xts_small_input() {
     rc::check("CRYPT_EAL_CipherUpdate succeeds with inLen=1 for non-XTS modes",
         []() {
             auto algId = *gen::element(CRYPT_CIPHER_SM4_ECB, CRYPT_CIPHER_SM4_CBC, CRYPT_CIPHER_SM4_CTR);
@@ -249,14 +224,9 @@ int main() {
             CRYPT_EAL_CipherDeinit(ctx);
             CRYPT_EAL_CipherFreeCtx(ctx);
         });
+}
 
-    /**
-     * @test CRYPT_EAL_CipherUpdate succeeds with all valid parameters
-     * @property When ctx, in, out, outLen are all valid,
-     *           CRYPT_EAL_CipherUpdate returns CRYPT_SUCCESS
-     * @generalizes SDV_CRYPTO_SM4_UPDATE_API_TC001:step2 - "All parameters valid"
-     * @see testcode/sdv/testcase/crypto/sm4/test_suite_sdv_eal_sm4.c:334
-     */
+void test_all_valid_params() {
     rc::check("CRYPT_EAL_CipherUpdate returns CRYPT_SUCCESS with all valid parameters",
         []() {
             auto algId = *gen::element(CRYPT_CIPHER_SM4_ECB, CRYPT_CIPHER_SM4_CBC, CRYPT_CIPHER_SM4_CTR);
@@ -281,13 +251,9 @@ int main() {
             CRYPT_EAL_CipherDeinit(ctx);
             CRYPT_EAL_CipherFreeCtx(ctx);
         });
+}
 
-    /**
-     * @test CRYPT_EAL_CipherUpdate output length equals input length for stream modes
-     * @property For CTR mode (stream cipher), outLen == inLen after successful update
-     * @generalizes SDV_CRYPTO_SM4_UPDATE_API_TC001 - Output length verification
-     * @see testcode/sdv/testcase/crypto/sm4/test_suite_sdv_eal_sm4.c:336
-     */
+void test_ctr_outlen_equals_inlen() {
     rc::check("CRYPT_EAL_CipherUpdate outLen equals inLen for CTR mode",
         []() {
             CRYPT_EAL_CipherCtx *ctx = CRYPT_EAL_CipherNewCtx(CRYPT_CIPHER_SM4_CTR);
@@ -310,14 +276,9 @@ int main() {
             CRYPT_EAL_CipherDeinit(ctx);
             CRYPT_EAL_CipherFreeCtx(ctx);
         });
+}
 
-    /**
-     * @test CRYPT_EAL_CipherUpdate outLen invariant for block cipher modes (CBC, ECB)
-     * @property For block cipher modes, outLen <= inLen and outLen % blockSize == 0
-     * @invariant Block cipher output is always a multiple of block size
-     * @invariant Block cipher output never exceeds input length (no cached data case)
-     * @see crypt_eal_cipher.h:149-158
-     */
+void test_block_cipher_outlen_invariant() {
     rc::check("CRYPT_EAL_CipherUpdate outLen is multiple of blockSize and <= inLen for CBC/ECB",
         []() {
             auto algId = *gen::element(CRYPT_CIPHER_SM4_ECB, CRYPT_CIPHER_SM4_CBC);
@@ -345,14 +306,9 @@ int main() {
             CRYPT_EAL_CipherDeinit(ctx);
             CRYPT_EAL_CipherFreeCtx(ctx);
         });
+}
 
-    /**
-     * @test CRYPT_EAL_CipherUpdate outLen invariant for XTS mode
-     * @property For XTS mode, outLen <= inLen - 32 and outLen % blockSize == 0
-     * @invariant XTS reserves last 2 blocks (32 bytes) for Final
-     * @invariant XTS output is always a multiple of block size
-     * @see crypt_eal_cipher.h:159-162
-     */
+void test_xts_reserves_2_blocks() {
     rc::check("CRYPT_EAL_CipherUpdate outLen reserves 2 blocks for XTS Final",
         []() {
             CRYPT_EAL_CipherCtx *ctx = CRYPT_EAL_CipherNewCtx(CRYPT_CIPHER_SM4_XTS);
@@ -378,12 +334,9 @@ int main() {
             CRYPT_EAL_CipherDeinit(ctx);
             CRYPT_EAL_CipherFreeCtx(ctx);
         });
+}
 
-    /**
-     * @test CRYPT_EAL_CipherUpdate outLen is always >= 0
-     * @property After successful Update, outLen is always non-negative
-     * @invariant outLen >= 0 for all cipher modes
-     */
+void test_outlen_non_negative() {
     rc::check("CRYPT_EAL_CipherUpdate outLen is always non-negative",
         []() {
             auto algId = *gen::element(CRYPT_CIPHER_SM4_ECB, CRYPT_CIPHER_SM4_CBC, 
@@ -415,13 +368,9 @@ int main() {
             CRYPT_EAL_CipherDeinit(ctx);
             CRYPT_EAL_CipherFreeCtx(ctx);
         });
+}
 
-    /**
-     * @test CRYPT_EAL_CipherUpdate outLen for CBC with inLen < blockSize
-     * @property When inLen < blockSize for CBC/ECB, outLen == 0 (data cached)
-     * @invariant Block cipher caches incomplete blocks
-     * @see crypt_eal_cipher.h:150-151
-     */
+void test_cbc_small_input() {
     rc::check("CRYPT_EAL_CipherUpdate outLen is 0 when inLen < blockSize for CBC/ECB",
         []() {
             auto algId = *gen::element(CRYPT_CIPHER_SM4_ECB, CRYPT_CIPHER_SM4_CBC);
@@ -448,13 +397,9 @@ int main() {
             CRYPT_EAL_CipherDeinit(ctx);
             CRYPT_EAL_CipherFreeCtx(ctx);
         });
+}
 
-    /**
-     * @test CRYPT_EAL_CipherUpdate outLen for CBC with inLen == blockSize
-     * @property When inLen == blockSize for CBC/ECB, outLen == blockSize
-     * @invariant Complete block produces output
-     * @see crypt_eal_cipher.h:152-153
-     */
+void test_cbc_exact_block() {
     rc::check("CRYPT_EAL_CipherUpdate outLen equals blockSize when inLen == blockSize for CBC/ECB",
         []() {
             auto algId = *gen::element(CRYPT_CIPHER_SM4_ECB, CRYPT_CIPHER_SM4_CBC);
@@ -480,13 +425,9 @@ int main() {
             CRYPT_EAL_CipherDeinit(ctx);
             CRYPT_EAL_CipherFreeCtx(ctx);
         });
+}
 
-    /**
-     * @test CRYPT_EAL_CipherUpdate outLen for CBC with inLen > blockSize (not multiple)
-     * @property When inLen > blockSize and not multiple, outLen == (inLen/blockSize)*blockSize
-     * @invariant Only complete blocks are output, remainder cached
-     * @see crypt_eal_cipher.h:154-155
-     */
+void test_cbc_non_block_multiple() {
     rc::check("CRYPT_EAL_CipherUpdate outLen is floor(inLen/blockSize)*blockSize for CBC/ECB",
         []() {
             auto algId = *gen::element(CRYPT_CIPHER_SM4_ECB, CRYPT_CIPHER_SM4_CBC);
@@ -515,13 +456,9 @@ int main() {
             CRYPT_EAL_CipherDeinit(ctx);
             CRYPT_EAL_CipherFreeCtx(ctx);
         });
+}
 
-    /**
-     * @test CRYPT_EAL_CipherUpdate outLen for XTS with inLen == 32
-     * @property When inLen == 32 for XTS, outLen == 0 (both blocks reserved for Final)
-     * @invariant XTS reserves minimum 2 blocks
-     * @see crypt_eal_cipher.h:161
-     */
+void test_xts_32_bytes() {
     rc::check("CRYPT_EAL_CipherUpdate outLen is 0 when inLen == 32 for XTS",
         []() {
             CRYPT_EAL_CipherCtx *ctx = CRYPT_EAL_CipherNewCtx(CRYPT_CIPHER_SM4_XTS);
@@ -544,13 +481,9 @@ int main() {
             CRYPT_EAL_CipherDeinit(ctx);
             CRYPT_EAL_CipherFreeCtx(ctx);
         });
+}
 
-    /**
-     * @test CRYPT_EAL_CipherUpdate outLen for XTS with inLen > 32
-     * @property For XTS, outLen == ((inLen/16) - 2) * 16
-     * @invariant XTS formula: reserves last 2 blocks
-     * @see crypt_eal_cipher.h:161-162
-     */
+void test_xts_formula() {
     rc::check("CRYPT_EAL_CipherUpdate outLen follows XTS formula",
         []() {
             CRYPT_EAL_CipherCtx *ctx = CRYPT_EAL_CipherNewCtx(CRYPT_CIPHER_SM4_XTS);
@@ -576,13 +509,9 @@ int main() {
             CRYPT_EAL_CipherDeinit(ctx);
             CRYPT_EAL_CipherFreeCtx(ctx);
         });
+}
 
-    /**
-     * @test CRYPT_EAL_CipherUpdate fails when called before Init
-     * @property When ctx is in NEW state (not initialized), 
-     *           CRYPT_EAL_CipherUpdate returns CRYPT_EAL_ERR_STATE
-     * @generalizes State machine property - Update requires Init first
-     */
+void test_update_before_init() {
     rc::check("CRYPT_EAL_CipherUpdate fails when called before Init",
         []() {
             auto algId = *gen::element(CRYPT_CIPHER_SM4_ECB, CRYPT_CIPHER_SM4_CBC, CRYPT_CIPHER_SM4_CTR);
@@ -598,12 +527,9 @@ int main() {
             
             CRYPT_EAL_CipherFreeCtx(ctx);
         });
+}
 
-    /**
-     * @test CRYPT_EAL_CipherUpdate fails when called after Final
-     * @property When ctx is in FINAL state, CRYPT_EAL_CipherUpdate returns CRYPT_EAL_ERR_STATE
-     * @generalizes State machine property - Update cannot be called after Final
-     */
+void test_update_after_final() {
     rc::check("CRYPT_EAL_CipherUpdate fails when called after Final",
         []() {
             CRYPT_EAL_CipherCtx *ctx = CRYPT_EAL_CipherNewCtx(CRYPT_CIPHER_SM4_CBC);
@@ -632,12 +558,9 @@ int main() {
             
             CRYPT_EAL_CipherFreeCtx(ctx);
         });
+}
 
-    /**
-     * @test CRYPT_EAL_CipherUpdate works for both encryption and decryption
-     * @property Update works for enc=true and enc=false after proper Init
-     * @generalizes SDV_CRYPTO_SM4_UPDATE_API_TC001 - enc parameter test
-     */
+void test_enc_dec() {
     rc::check("CRYPT_EAL_CipherUpdate works for both encryption and decryption",
         []() {
             auto enc = *gen::arbitrary<bool>();
@@ -664,12 +587,9 @@ int main() {
             CRYPT_EAL_CipherDeinit(ctx);
             CRYPT_EAL_CipherFreeCtx(ctx);
         });
+}
 
-    /**
-     * @test CRYPT_EAL_CipherUpdate can be called multiple times
-     * @property Multiple sequential Update calls succeed (streaming mode)
-     * @generalizes SDV_CRYPTO_SM4_UPDATE_API_TC001 - Multiple update test
-     */
+void test_multiple_updates() {
     rc::check("CRYPT_EAL_CipherUpdate can be called multiple times",
         []() {
             CRYPT_EAL_CipherCtx *ctx = CRYPT_EAL_CipherNewCtx(CRYPT_CIPHER_SM4_CTR);
@@ -694,6 +614,96 @@ int main() {
             CRYPT_EAL_CipherDeinit(ctx);
             CRYPT_EAL_CipherFreeCtx(ctx);
         });
+}
 
+// Test registry
+std::map<std::string, std::function<void()>> testRegistry = {
+    {"null_ctx", test_null_ctx},
+    {"null_in_nonzero_len", test_null_in_nonzero_len},
+    {"null_in_zero_len", test_null_in_zero_len},
+    {"null_out", test_null_out},
+    {"null_outlen", test_null_outlen},
+    {"xts_small_input", test_xts_small_input},
+    {"non_xts_small_input", test_non_xts_small_input},
+    {"all_valid_params", test_all_valid_params},
+    {"ctr_outlen_equals_inlen", test_ctr_outlen_equals_inlen},
+    {"block_cipher_outlen_invariant", test_block_cipher_outlen_invariant},
+    {"xts_reserves_2_blocks", test_xts_reserves_2_blocks},
+    {"outlen_non_negative", test_outlen_non_negative},
+    {"cbc_small_input", test_cbc_small_input},
+    {"cbc_exact_block", test_cbc_exact_block},
+    {"cbc_non_block_multiple", test_cbc_non_block_multiple},
+    {"xts_32_bytes", test_xts_32_bytes},
+    {"xts_formula", test_xts_formula},
+    {"update_before_init", test_update_before_init},
+    {"update_after_final", test_update_after_final},
+    {"enc_dec", test_enc_dec},
+    {"multiple_updates", test_multiple_updates},
+};
+
+void printUsage(const char* programName) {
+    std::cerr << "Usage: " << programName << " [OPTIONS] [TEST_NAMES...]\n"
+              << "\n"
+              << "Options:\n"
+              << "  --list, -l     List all available test names\n"
+              << "  --help, -h     Show this help message\n"
+              << "\n"
+              << "Examples:\n"
+              << "  " << programName << "                          # Run all tests\n"
+              << "  " << programName << " --list                   # List all test names\n"
+              << "  " << programName << " xts_32_bytes             # Run specific test\n"
+              << "  " << programName << " test1 test2 test3        # Run multiple tests\n";
+}
+
+void listTests() {
+    std::cout << "Available tests:\n";
+    for (const auto& [name, func] : testRegistry) {
+        std::cout << "  " << name << "\n";
+    }
+    std::cout << "\nTotal: " << testRegistry.size() << " tests\n";
+}
+
+int main(int argc, char* argv[]) {
+    // Parse command-line arguments
+    std::vector<std::string> testsToRun;
+    
+    for (int i = 1; i < argc; i++) {
+        std::string arg = argv[i];
+        if (arg == "--list" || arg == "-l") {
+            listTests();
+            return 0;
+        } else if (arg == "--help" || arg == "-h") {
+            printUsage(argv[0]);
+            return 0;
+        } else {
+            testsToRun.push_back(arg);
+        }
+    }
+    
+    // Run tests
+    if (testsToRun.empty()) {
+        // Run all tests
+        std::cout << "Running all " << testRegistry.size() << " tests...\n\n";
+        for (const auto& [name, func] : testRegistry) {
+            std::cout << "Running test: " << name << "\n";
+            func();
+            std::cout << "\n";
+        }
+    } else {
+        // Run specific tests
+        for (const auto& testName : testsToRun) {
+            auto it = testRegistry.find(testName);
+            if (it != testRegistry.end()) {
+                std::cout << "Running test: " << testName << "\n";
+                it->second();
+                std::cout << "\n";
+            } else {
+                std::cerr << "Error: Unknown test '" << testName << "'\n";
+                std::cerr << "Use --list to see available tests\n";
+                return 1;
+            }
+        }
+    }
+    
     return 0;
 }

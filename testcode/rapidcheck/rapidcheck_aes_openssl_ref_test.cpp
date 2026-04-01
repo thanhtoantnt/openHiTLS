@@ -21,12 +21,21 @@
  * - OpenSSL is well-tested and widely trusted
  * - Any discrepancy indicates a potential bug in openHiTLS
  * - Random inputs find edge cases fixed test vectors miss
+ * 
+ * Usage:
+ *   ./rapidcheck_aes_openssl_ref_test              # Run all tests
+ *   ./rapidcheck_aes_openssl_ref_test --list       # List all test names
+ *   ./rapidcheck_aes_openssl_ref_test test1 test2  # Run specific tests
  */
 
 #include <rapidcheck.h>
 #include <vector>
 #include <cstring>
 #include <cstdint>
+#include <iostream>
+#include <map>
+#include <functional>
+
 #include <openssl/evp.h>
 #include <openssl/aes.h>
 #include <openssl/err.h>
@@ -206,125 +215,78 @@ bool requiresIV(CRYPT_CIPHER_AlgId algId) {
     }
 }
 
-int main() {
-    /**
-     * @test OpenSSL XTS-128 Update behavior with 32-byte input
-     * @property OpenSSL XTS Update processes all data immediately (no block reservation)
-     * @context This test validates that the XTS block reservation bug found in openHiTLS
-     *          is NOT present in OpenSSL. OpenSSL correctly processes all input data
-     *          without reserving blocks for Final.
-     * 
-     * @rationale According to IEEE 1619 and OpenSSL implementation:
-     *            - XTS mode can process any amount of data >= 16 bytes
-     *            - Update should output all processed data immediately
-     *            - Final is only needed for cleanup (outputs 0 bytes for XTS)
-     *            
-     * @expected OpenSSL behavior:
-     *           - Update(inLen=32) returns outLen=32 (processes all data)
-     *           - Final() returns outLen=0 (no data left to output)
-     *           
-     * @contrast openHiTLS bug:
-     *           - Documentation claims Update should reserve 2 blocks
-     *           - Implementation actually outputs all data (like OpenSSL)
-     *           - This creates a documentation/implementation mismatch
-     *           
-     * @see include/crypto/crypt_eal_cipher.h:159-162 (openHiTLS documentation)
-     * @see crypto/modes/src/modes.c:542 (openHiTLS implementation bug)
-     */
+// Test functions - each test is a separate function for easier debugging
+
+void test_openssl_xts128_32bytes() {
     rc::check("OpenSSL AES-128-XTS Update processes 32 bytes immediately (no reservation)",
         []() {
-            // Generate 32-byte key (XTS requires double key: 16 bytes for each half)
             auto keyData = *gen::container<std::vector<uint8_t>>(32, gen::arbitrary<uint8_t>());
-            
-            // Generate 16-byte IV/tweak
             auto ivData = *gen::container<std::vector<uint8_t>>(16, gen::arbitrary<uint8_t>());
-            
-            // Generate exactly 32 bytes of plaintext (2 blocks)
             auto plaintext = *gen::container<std::vector<uint8_t>>(32, gen::arbitrary<uint8_t>());
             
-            // Create OpenSSL XTS cipher
             EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
             RC_PRE(ctx != nullptr);
             
-            // Initialize AES-128-XTS encryption
             int ret = EVP_EncryptInit_ex(ctx, EVP_aes_128_xts(), nullptr, 
                                           keyData.data(), ivData.data());
             RC_PRE(ret == 1);
             
-            // Update with 32 bytes
             std::vector<uint8_t> ciphertext(32 + EVP_MAX_BLOCK_LENGTH);
             int updateLen = 0;
             ret = EVP_EncryptUpdate(ctx, ciphertext.data(), &updateLen, 
                                     plaintext.data(), 32);
             RC_PRE(ret == 1);
             
-            // Final
             int finalLen = 0;
             ret = EVP_EncryptFinal_ex(ctx, ciphertext.data() + updateLen, &finalLen);
             RC_PRE(ret == 1);
             
             EVP_CIPHER_CTX_free(ctx);
             
-            // OpenSSL processes all 32 bytes in Update (no reservation)
             RC_ASSERT(updateLen == 32);
             RC_ASSERT(finalLen == 0);
             RC_ASSERT(updateLen + finalLen == 32);
         });
+}
 
-    /**
-     * @test OpenSSL XTS-256 Update behavior with 32-byte input
-     * @property Same as XTS-128 but with 256-bit key
-     */
+void test_openssl_xts256_32bytes() {
     rc::check("OpenSSL AES-256-XTS Update processes 32 bytes immediately (no reservation)",
         []() {
-            // Generate 64-byte key (XTS requires double key: 32 bytes for each half)
             auto keyData = *gen::container<std::vector<uint8_t>>(64, gen::arbitrary<uint8_t>());
-            
-            // Generate 16-byte IV/tweak
             auto ivData = *gen::container<std::vector<uint8_t>>(16, gen::arbitrary<uint8_t>());
-            
-            // Generate exactly 32 bytes of plaintext (2 blocks)
             auto plaintext = *gen::container<std::vector<uint8_t>>(32, gen::arbitrary<uint8_t>());
             
-            // Create OpenSSL XTS cipher
             EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
             RC_PRE(ctx != nullptr);
             
-            // Initialize AES-256-XTS encryption
             int ret = EVP_EncryptInit_ex(ctx, EVP_aes_256_xts(), nullptr, 
                                           keyData.data(), ivData.data());
             RC_PRE(ret == 1);
             
-            // Update with 32 bytes
             std::vector<uint8_t> ciphertext(32 + EVP_MAX_BLOCK_LENGTH);
             int updateLen = 0;
             ret = EVP_EncryptUpdate(ctx, ciphertext.data(), &updateLen, 
                                     plaintext.data(), 32);
             RC_PRE(ret == 1);
             
-            // Final
             int finalLen = 0;
             ret = EVP_EncryptFinal_ex(ctx, ciphertext.data() + updateLen, &finalLen);
             RC_PRE(ret == 1);
             
             EVP_CIPHER_CTX_free(ctx);
             
-            // OpenSSL processes all 32 bytes in Update (no reservation)
             RC_ASSERT(updateLen == 32);
             RC_ASSERT(finalLen == 0);
             RC_ASSERT(updateLen + finalLen == 32);
         });
+}
 
-    /**
-     * @test OpenSSL XTS with various input lengths
-     * @property OpenSSL XTS Update always outputs all input data (no reservation)
-     */
+void test_openssl_xts128_various_lengths() {
     rc::check("OpenSSL AES-128-XTS Update processes all input lengths correctly",
         []() {
             auto keyData = *gen::container<std::vector<uint8_t>>(32, gen::arbitrary<uint8_t>());
             auto ivData = *gen::container<std::vector<uint8_t>>(16, gen::arbitrary<uint8_t>());
             
-            // Generate random length >= 16 bytes (XTS minimum)
             auto plaintextLen = *gen::inRange(16, 256);
             auto plaintext = *gen::container<std::vector<uint8_t>>(plaintextLen, gen::arbitrary<uint8_t>());
             
@@ -347,56 +309,32 @@ int main() {
             
             EVP_CIPHER_CTX_free(ctx);
             
-            // OpenSSL always processes all data in Update for XTS
             RC_ASSERT(updateLen == plaintextLen);
             RC_ASSERT(finalLen == 0);
             RC_ASSERT(updateLen + finalLen == plaintextLen);
         });
+}
 
-    // Test algorithms to cover
-    std::vector<CRYPT_CIPHER_AlgId> testAlgorithms = {
-        CRYPT_CIPHER_AES128_ECB,
-        CRYPT_CIPHER_AES128_CBC,
-        CRYPT_CIPHER_AES128_CTR,
-        CRYPT_CIPHER_AES192_ECB,
-        CRYPT_CIPHER_AES192_CBC,
-        CRYPT_CIPHER_AES192_CTR,
-        CRYPT_CIPHER_AES256_ECB,
-        CRYPT_CIPHER_AES256_CBC,
-        CRYPT_CIPHER_AES256_CTR,
-    };
-
-    /**
-     * @test AES encryption matches OpenSSL reference (differential testing)
-     * @property For all valid keys, IVs, and plaintexts,
-     *           openHiTLS encrypt(plaintext, key, iv) == OpenSSL encrypt(plaintext, key, iv)
-     * @generalizes SDV_CRYPTO_AES_ENCRYPT_FUNC_TC001 - Uses OpenSSL as oracle instead of fixed vectors
-     * @see testcode/sdv/testcase/crypto/aes/test_suite_sdv_eal_aes.c:488
-     */
-   //  for (CRYPT_CIPHER_AlgId algId : testAlgorithms) {
-        CRYPT_CIPHER_AlgId algId  = CRYPT_CIPHER_AES128_ECB;
-        std::string testName = "AES encryption matches OpenSSL for algId=" + std::to_string(static_cast<int>(algId));
-        
-        rc::check(testName, [=]() {
+void test_aes128_ecb_match() {
+    rc::check("AES-128-ECB encryption matches OpenSSL",
+        []() {
+            CRYPT_CIPHER_AlgId algId = CRYPT_CIPHER_AES128_ECB;
             int keySize = getKeySize(algId);
             RC_PRE(keySize > 0);
             
-            std::vector<uint8_t>  key = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+            auto key = *gen::container<std::vector<uint8_t>>(keySize, gen::arbitrary<uint8_t>());
             
             std::vector<uint8_t> iv;
             if (requiresIV(algId)) {
                 iv = *gen::container<std::vector<uint8_t>>(16, gen::arbitrary<uint8_t>());
             }
             
-            // Generate plaintext of random length (1 to 256 bytes)
-            auto plaintextLen = 1;
+            auto plaintextLen = *gen::inRange(1, 256);
             auto plaintext = *gen::container<std::vector<uint8_t>>(plaintextLen, gen::arbitrary<uint8_t>());
             
-            // Get OpenSSL cipher
             const EVP_CIPHER* osCipher = getOpenSSLCipher(algId);
             RC_PRE(osCipher != nullptr);
             
-            // Encrypt with OpenSSL (reference)
             OpenSSLCipher osEnc(osCipher, key, iv, true);
             RC_PRE(osEnc.isValid());
             
@@ -404,17 +342,264 @@ int main() {
             osTotalLen += osEnc.update(plaintext);
             osTotalLen += osEnc.final();
             
-            // Encrypt with openHiTLS (implementation under test)
             HiTLSCipher hitlsEnc(algId, key, iv, true);
             RC_PRE(hitlsEnc.isValid());
             
             int hitlsTotalLen = 0;
             hitlsTotalLen += hitlsEnc.update(plaintext);
-            RC_ASSERT(0 == hitlsTotalLen);
             hitlsTotalLen += hitlsEnc.final();
-            RC_ASSERT(-1 == hitlsTotalLen);
+            
+            RC_ASSERT(hitlsTotalLen == osTotalLen);
         });
-   // }
+}
 
+void test_aes128_cbc_match() {
+    rc::check("AES-128-CBC encryption matches OpenSSL",
+        []() {
+            CRYPT_CIPHER_AlgId algId = CRYPT_CIPHER_AES128_CBC;
+            int keySize = getKeySize(algId);
+            RC_PRE(keySize > 0);
+            
+            auto key = *gen::container<std::vector<uint8_t>>(keySize, gen::arbitrary<uint8_t>());
+            auto iv = *gen::container<std::vector<uint8_t>>(16, gen::arbitrary<uint8_t>());
+            
+            auto plaintextLen = *gen::inRange(1, 256);
+            auto plaintext = *gen::container<std::vector<uint8_t>>(plaintextLen, gen::arbitrary<uint8_t>());
+            
+            const EVP_CIPHER* osCipher = getOpenSSLCipher(algId);
+            RC_PRE(osCipher != nullptr);
+            
+            OpenSSLCipher osEnc(osCipher, key, iv, true);
+            RC_PRE(osEnc.isValid());
+            
+            int osTotalLen = 0;
+            osTotalLen += osEnc.update(plaintext);
+            osTotalLen += osEnc.final();
+            
+            HiTLSCipher hitlsEnc(algId, key, iv, true);
+            RC_PRE(hitlsEnc.isValid());
+            
+            int hitlsTotalLen = 0;
+            hitlsTotalLen += hitlsEnc.update(plaintext);
+            hitlsTotalLen += hitlsEnc.final();
+            
+            RC_ASSERT(hitlsTotalLen == osTotalLen);
+        });
+}
+
+void test_aes128_ctr_match() {
+    rc::check("AES-128-CTR encryption matches OpenSSL",
+        []() {
+            CRYPT_CIPHER_AlgId algId = CRYPT_CIPHER_AES128_CTR;
+            int keySize = getKeySize(algId);
+            RC_PRE(keySize > 0);
+            
+            auto key = *gen::container<std::vector<uint8_t>>(keySize, gen::arbitrary<uint8_t>());
+            auto iv = *gen::container<std::vector<uint8_t>>(16, gen::arbitrary<uint8_t>());
+            
+            auto plaintextLen = *gen::inRange(1, 256);
+            auto plaintext = *gen::container<std::vector<uint8_t>>(plaintextLen, gen::arbitrary<uint8_t>());
+            
+            const EVP_CIPHER* osCipher = getOpenSSLCipher(algId);
+            RC_PRE(osCipher != nullptr);
+            
+            OpenSSLCipher osEnc(osCipher, key, iv, true);
+            RC_PRE(osEnc.isValid());
+            
+            int osTotalLen = 0;
+            osTotalLen += osEnc.update(plaintext);
+            osTotalLen += osEnc.final();
+            
+            HiTLSCipher hitlsEnc(algId, key, iv, true);
+            RC_PRE(hitlsEnc.isValid());
+            
+            int hitlsTotalLen = 0;
+            hitlsTotalLen += hitlsEnc.update(plaintext);
+            hitlsTotalLen += hitlsEnc.final();
+            
+            RC_ASSERT(hitlsTotalLen == osTotalLen);
+        });
+}
+
+void test_aes256_ecb_match() {
+    rc::check("AES-256-ECB encryption matches OpenSSL",
+        []() {
+            CRYPT_CIPHER_AlgId algId = CRYPT_CIPHER_AES256_ECB;
+            int keySize = getKeySize(algId);
+            RC_PRE(keySize > 0);
+            
+            auto key = *gen::container<std::vector<uint8_t>>(keySize, gen::arbitrary<uint8_t>());
+            
+            std::vector<uint8_t> iv;
+            
+            auto plaintextLen = *gen::inRange(1, 256);
+            auto plaintext = *gen::container<std::vector<uint8_t>>(plaintextLen, gen::arbitrary<uint8_t>());
+            
+            const EVP_CIPHER* osCipher = getOpenSSLCipher(algId);
+            RC_PRE(osCipher != nullptr);
+            
+            OpenSSLCipher osEnc(osCipher, key, iv, true);
+            RC_PRE(osEnc.isValid());
+            
+            int osTotalLen = 0;
+            osTotalLen += osEnc.update(plaintext);
+            osTotalLen += osEnc.final();
+            
+            HiTLSCipher hitlsEnc(algId, key, iv, true);
+            RC_PRE(hitlsEnc.isValid());
+            
+            int hitlsTotalLen = 0;
+            hitlsTotalLen += hitlsEnc.update(plaintext);
+            hitlsTotalLen += hitlsEnc.final();
+            
+            RC_ASSERT(hitlsTotalLen == osTotalLen);
+        });
+}
+
+void test_aes256_cbc_match() {
+    rc::check("AES-256-CBC encryption matches OpenSSL",
+        []() {
+            CRYPT_CIPHER_AlgId algId = CRYPT_CIPHER_AES256_CBC;
+            int keySize = getKeySize(algId);
+            RC_PRE(keySize > 0);
+            
+            auto key = *gen::container<std::vector<uint8_t>>(keySize, gen::arbitrary<uint8_t>());
+            auto iv = *gen::container<std::vector<uint8_t>>(16, gen::arbitrary<uint8_t>());
+            
+            auto plaintextLen = *gen::inRange(1, 256);
+            auto plaintext = *gen::container<std::vector<uint8_t>>(plaintextLen, gen::arbitrary<uint8_t>());
+            
+            const EVP_CIPHER* osCipher = getOpenSSLCipher(algId);
+            RC_PRE(osCipher != nullptr);
+            
+            OpenSSLCipher osEnc(osCipher, key, iv, true);
+            RC_PRE(osEnc.isValid());
+            
+            int osTotalLen = 0;
+            osTotalLen += osEnc.update(plaintext);
+            osTotalLen += osEnc.final();
+            
+            HiTLSCipher hitlsEnc(algId, key, iv, true);
+            RC_PRE(hitlsEnc.isValid());
+            
+            int hitlsTotalLen = 0;
+            hitlsTotalLen += hitlsEnc.update(plaintext);
+            hitlsTotalLen += hitlsEnc.final();
+            
+            RC_ASSERT(hitlsTotalLen == osTotalLen);
+        });
+}
+
+void test_aes256_ctr_match() {
+    rc::check("AES-256-CTR encryption matches OpenSSL",
+        []() {
+            CRYPT_CIPHER_AlgId algId = CRYPT_CIPHER_AES256_CTR;
+            int keySize = getKeySize(algId);
+            RC_PRE(keySize > 0);
+            
+            auto key = *gen::container<std::vector<uint8_t>>(keySize, gen::arbitrary<uint8_t>());
+            auto iv = *gen::container<std::vector<uint8_t>>(16, gen::arbitrary<uint8_t>());
+            
+            auto plaintextLen = *gen::inRange(1, 256);
+            auto plaintext = *gen::container<std::vector<uint8_t>>(plaintextLen, gen::arbitrary<uint8_t>());
+            
+            const EVP_CIPHER* osCipher = getOpenSSLCipher(algId);
+            RC_PRE(osCipher != nullptr);
+            
+            OpenSSLCipher osEnc(osCipher, key, iv, true);
+            RC_PRE(osEnc.isValid());
+            
+            int osTotalLen = 0;
+            osTotalLen += osEnc.update(plaintext);
+            osTotalLen += osEnc.final();
+            
+            HiTLSCipher hitlsEnc(algId, key, iv, true);
+            RC_PRE(hitlsEnc.isValid());
+            
+            int hitlsTotalLen = 0;
+            hitlsTotalLen += hitlsEnc.update(plaintext);
+            hitlsTotalLen += hitlsEnc.final();
+            
+            RC_ASSERT(hitlsTotalLen == osTotalLen);
+        });
+}
+
+// Test registry
+std::map<std::string, std::function<void()>> testRegistry = {
+    {"openssl_xts128_32bytes", test_openssl_xts128_32bytes},
+    {"openssl_xts256_32bytes", test_openssl_xts256_32bytes},
+    {"openssl_xts128_various_lengths", test_openssl_xts128_various_lengths},
+    {"aes128_ecb_match", test_aes128_ecb_match},
+    {"aes128_cbc_match", test_aes128_cbc_match},
+    {"aes128_ctr_match", test_aes128_ctr_match},
+    {"aes256_ecb_match", test_aes256_ecb_match},
+    {"aes256_cbc_match", test_aes256_cbc_match},
+    {"aes256_ctr_match", test_aes256_ctr_match},
+};
+
+void printUsage(const char* programName) {
+    std::cerr << "Usage: " << programName << " [OPTIONS] [TEST_NAMES...]\n"
+              << "\n"
+              << "Options:\n"
+              << "  --list, -l     List all available test names\n"
+              << "  --help, -h     Show this help message\n"
+              << "\n"
+              << "Examples:\n"
+              << "  " << programName << "                          # Run all tests\n"
+              << "  " << programName << " --list                   # List all test names\n"
+              << "  " << programName << " openssl_xts128_32bytes   # Run specific test\n"
+              << "  " << programName << " test1 test2 test3        # Run multiple tests\n";
+}
+
+void listTests() {
+    std::cout << "Available tests:\n";
+    for (const auto& [name, func] : testRegistry) {
+        std::cout << "  " << name << "\n";
+    }
+    std::cout << "\nTotal: " << testRegistry.size() << " tests\n";
+}
+
+int main(int argc, char* argv[]) {
+    // Parse command-line arguments
+    std::vector<std::string> testsToRun;
+    
+    for (int i = 1; i < argc; i++) {
+        std::string arg = argv[i];
+        if (arg == "--list" || arg == "-l") {
+            listTests();
+            return 0;
+        } else if (arg == "--help" || arg == "-h") {
+            printUsage(argv[0]);
+            return 0;
+        } else {
+            testsToRun.push_back(arg);
+        }
+    }
+    
+    // Run tests
+    if (testsToRun.empty()) {
+        // Run all tests
+        std::cout << "Running all " << testRegistry.size() << " tests...\n\n";
+        for (const auto& [name, func] : testRegistry) {
+            std::cout << "Running test: " << name << "\n";
+            func();
+            std::cout << "\n";
+        }
+    } else {
+        // Run specific tests
+        for (const auto& testName : testsToRun) {
+            auto it = testRegistry.find(testName);
+            if (it != testRegistry.end()) {
+                std::cout << "Running test: " << testName << "\n";
+                it->second();
+                std::cout << "\n";
+            } else {
+                std::cerr << "Error: Unknown test '" << testName << "'\n";
+                std::cerr << "Use --list to see available tests\n";
+                return 1;
+            }
+        }
+    }
+    
     return 0;
 }
