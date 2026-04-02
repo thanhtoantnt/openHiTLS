@@ -364,31 +364,55 @@ void test_incremental_equals_oneshot() {
         });
 }
 
-/** Key sensitivity: different non-zero-padded-equivalent keys produce different MACs
+/** Key sensitivity: different keys (not zero-padding-equivalent) produce different MACs
  *  @generalizes SDV_CRYPT_EAL_HMAC_API_TC002 key sensitivity
  *
- *  Note: Per RFC 2104, keys shorter than the block size are zero-padded to block size.
- *  Therefore keys with the same zero-padded representation (e.g., [0x00] and [0x00, 0x00])
- *  MUST produce the same MAC — that is correct, spec-mandated behaviour.
- *  We avoid that degenerate case by ensuring the keys differ in at least one non-zero byte.
+ *  Per RFC 2104 §2, HMAC zero-pads keys shorter than blockSize to blockSize.
+ *  Therefore two keys that produce the same zero-padded representation MUST
+ *  produce the same MAC — that is mandated correct behaviour, not a bug.
+ *
+ *  Example (HMAC-MD5, blockSize=64):
+ *    key1 = [0x00, 0x01, 0x00]  → ipad[0..2] = [0x36, 0x37, 0x36], ipad[3..63] = 0x36
+ *    key2 = [0x00, 0x01]        → ipad[0..1] = [0x36, 0x37],        ipad[2..63] = 0x36
+ *    Both produce ipad = [0x36, 0x37, 0x36, 0x36, ..., 0x36] — identical.
+ *    The trailing 0x00 byte in key1 is indistinguishable from implicit zero-padding.
+ *
+ *  We exclude zero-padding-equivalent key pairs by comparing their effective
+ *  blockSize-byte HMAC key representations.
+ *
+ *  See HMAC_KEY_TRAILING_ZERO_REPORT.md for full analysis.
  */
 void test_key_sensitivity() {
-    rc::check("Different HMAC keys (non-zero-equivalent) produce different MACs",
+    rc::check("Different HMAC keys (non-zero-padding-equivalent) produce different MACs",
         []() {
             auto alg = genHmacAlg();
 
-            // Generate keys that differ on at least one byte with value > 0
-            // to ensure they are not equivalent under zero-padding
+            // Block sizes per RFC 2104 / algorithm spec
+            auto getBlockSize = [](CRYPT_MAC_AlgId id) -> size_t {
+                switch (id) {
+                    case CRYPT_MAC_HMAC_SHA384:
+                    case CRYPT_MAC_HMAC_SHA512:   return 128;
+                    case CRYPT_MAC_HMAC_SHA3_224:  return 144;
+                    case CRYPT_MAC_HMAC_SHA3_256:  return 136;
+                    case CRYPT_MAC_HMAC_SHA3_384:  return 104;
+                    case CRYPT_MAC_HMAC_SHA3_512:  return 72;
+                    default:                       return 64;  // MD5,SHA1,SHA2-224/256,SM3
+                }
+            };
+            size_t blockSize = getBlockSize(alg.id);
+
             auto key1 = genKey(alg);
             auto key2 = genKey(alg);
             RC_PRE(key1 != key2);
 
-            // Discard trivially-equivalent pairs: both keys consist entirely of 0x00
-            // bytes and only differ in length — RFC 2104 mandates those produce
-            // identical MACs after zero-padding to blockSize.
-            bool key1AllZero = std::all_of(key1.begin(), key1.end(), [](uint8_t b){ return b == 0; });
-            bool key2AllZero = std::all_of(key2.begin(), key2.end(), [](uint8_t b){ return b == 0; });
-            RC_PRE(!(key1AllZero && key2AllZero));
+            // Exclude zero-padding-equivalent pairs: two keys whose zero-padded
+            // representations are identical will produce the same MAC (RFC 2104).
+            auto zeroPad = [&](const std::vector<uint8_t> &k) {
+                std::vector<uint8_t> padded(blockSize, 0);
+                for (size_t i = 0; i < k.size() && i < blockSize; i++) padded[i] = k[i];
+                return padded;
+            };
+            RC_PRE(zeroPad(key1) != zeroPad(key2));
 
             auto data = *gen::container<std::vector<uint8_t>>(
                 *gen::inRange(1, 64), gen::arbitrary<uint8_t>());
