@@ -213,14 +213,22 @@ void test_ikm_sensitivity() {
 
 /** Salt sensitivity: different salt produces different output
  *
- *  Note: Per RFC 5869 Section 2.2, the salt is used as the HMAC key in the Extract step.
- *  Per RFC 2104, HMAC keys shorter than the block size are zero-padded to the block size.
- *  Therefore salts that consist entirely of 0x00 bytes and only differ in length produce
- *  identical outputs (their zero-padded HMAC representations are the same).
- *  We exclude that degenerate case by requiring at least one non-zero byte.
+ *  Note: RFC 5869 §2.2 uses the salt as the HMAC key in the Extract step.
+ *  Per RFC 2104, HMAC keys shorter than the block size are zero-padded to the
+ *  block size. Therefore two salts that produce the same zero-padded HMAC key
+ *  will produce identical OKMs. This is mandated correct behavior.
+ *
+ *  We exclude zero-padding-equivalent salt pairs by comparing their effective
+ *  HMAC representations (zero-padded to the minimum HKDF block size of 64 bytes).
+ *
+ *  Concrete counterexample (seed=1, HMAC-SHA1):
+ *    salt1=[0x01, 0x00]  →  zero-pad to 64  →  [0x01, 0x00, 0x00, ..., 0x00]
+ *    salt2=[0x01]        →  zero-pad to 64  →  [0x01, 0x00, 0x00, ..., 0x00]
+ *    These are identical after padding → same OKM (correct, documented behavior).
+ *  See HKDF_SALT_TRAILING_ZERO_REPORT.md for full analysis.
  */
 void test_salt_sensitivity() {
-    rc::check("Different HKDF salt (non-zero-equivalent) produces different output",
+    rc::check("Different HKDF salt (non-zero-padding-equivalent) produces different output",
         []() {
             auto alg = genAlg();
             auto ikm   = *gen::container<std::vector<uint8_t>>(16, gen::arbitrary<uint8_t>());
@@ -228,11 +236,16 @@ void test_salt_sensitivity() {
             auto salt2 = *gen::container<std::vector<uint8_t>>(*gen::inRange(1, 32), gen::arbitrary<uint8_t>());
             RC_PRE(salt1 != salt2);
 
-            // Exclude pairs that are both all-zero (differ only in length);
-            // such pairs are equivalent under HMAC zero-padding (RFC 2104 / RFC 5869).
-            bool s1AllZero = std::all_of(salt1.begin(), salt1.end(), [](uint8_t b){ return b == 0; });
-            bool s2AllZero = std::all_of(salt2.begin(), salt2.end(), [](uint8_t b){ return b == 0; });
-            RC_PRE(!(s1AllZero && s2AllZero));
+            // Exclude zero-padding-equivalent pairs: two salts that produce the
+            // same 64-byte zero-padded HMAC key will produce the same OKM.
+            // 64 bytes is the minimum HMAC block size across all supported algs.
+            const size_t MIN_BLOCK_SIZE = 64;
+            auto zeroPad = [&](const std::vector<uint8_t> &v) {
+                std::vector<uint8_t> padded(MIN_BLOCK_SIZE, 0);
+                for (size_t i = 0; i < v.size() && i < MIN_BLOCK_SIZE; i++) padded[i] = v[i];
+                return padded;
+            };
+            RC_PRE(zeroPad(salt1) != zeroPad(salt2));
 
             uint32_t outLen = alg.hashLen;
 
