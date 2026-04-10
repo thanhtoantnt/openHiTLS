@@ -42,6 +42,14 @@ typedef struct _HITLS_X509_VerifyParam {
 #ifdef HITLS_CRYPTO_SM2
     BSL_Buffer sm2UserId;
 #endif
+#ifdef HITLS_PKI_X509_VFY_IDENTITY
+    BslList *hostnames;         // list of verify hostname
+    unsigned char *ip;          // verify ip
+    int32_t ipLen;
+    uint32_t hostflags;         // verify hostfalg
+
+    char *peername;             // hostname matched after verification
+#endif
 } HITLS_X509_VerifyParam;
 
 struct _HITLS_X509_StoreCtx {
@@ -61,6 +69,7 @@ struct _HITLS_X509_StoreCtx {
     HITLS_X509_Cert *curCert;         // Current certificate being verified
     X509_STORECTX_VerifyCb verifyCb;  // Verification callback function
     void *usrData;                    // user data
+    HITLS_X509_List *peerCertChain;   // Cert chain from peer
 #endif
 };
 

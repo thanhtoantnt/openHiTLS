@@ -22,10 +22,26 @@
 #include "crypt_eal_md.h"
 #include "hitls_cert_local.h"
 #include "hitls_pki_crl.h"
+#include "hitls_pki_cms.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif /* __cplusplus */
+
+#ifdef HITLS_PKI_CMS_DATA
+// parse PKCS7-Data
+int32_t HITLS_CMS_ParseAsn1Data(BSL_Buffer *encode, BSL_Buffer *dataValue);
+#endif
+
+#ifdef HITLS_PKI_CMS_DIGESTINFO
+
+// parse PKCS7-DigestInfo：only support hash.
+int32_t HITLS_CMS_ParseDigestInfo(BSL_Buffer *encode, BslCid *cid, BSL_Buffer *digest);
+
+// encode PKCS7-DigestInfo：only support hash.
+int32_t HITLS_CMS_EncodeDigestInfoBuff(BslCid cid, BSL_Buffer *in, BSL_Buffer *encode);
+
+#endif // HITLS_PKI_CMS_DIGESTINFO
 
 #ifdef HITLS_PKI_CMS_SIGNEDDATA
 
@@ -113,12 +129,12 @@ typedef struct {
     BSL_Buffer content;   /**< Content (optional) */
 } CMS_ContentInfo;
 
-typedef struct _HITLS_CMS {
+struct _HITLS_CMS {
     int32_t dataType;                     /**< CMS data type */
     union {
         CMS_SignedData *signedData;
     } ctx;
-} HITLS_CMS;
+};
 
 /**
  * @brief Parse SignedData from ASN.1 encoded buffer
@@ -187,23 +203,6 @@ int32_t HITLS_CMS_SignedDataUpdate(HITLS_CMS *cms, const BSL_Buffer *input);
  */
 int32_t HITLS_CMS_SignedDataFinal(HITLS_CMS *cms, const BSL_Param *param);
 
-#endif
-
-#ifdef HITLS_PKI_CMS_DATA
-// parse PKCS7-Data
-int32_t HITLS_CMS_ParseAsn1Data(BSL_Buffer *encode, BSL_Buffer *dataValue);
-#endif
-
-#ifdef HITLS_PKI_CMS_DIGESTINFO
-
-// parse PKCS7-DigestInfo：only support hash.
-int32_t HITLS_CMS_ParseDigestInfo(BSL_Buffer *encode, BslCid *cid, BSL_Buffer *digest);
-
-// encode PKCS7-DigestInfo：only support hash.
-int32_t HITLS_CMS_EncodeDigestInfoBuff(BslCid cid, BSL_Buffer *in, BSL_Buffer *encode);
-
-#endif
-
 /**
  * @ingroup cms
  * @brief cms generate
@@ -232,6 +231,8 @@ int32_t HITLS_CMS_GenBuff(int32_t format, HITLS_CMS *cms, const BSL_Param *optio
  *         Error codes can be found in hitls_pki_errno.h
  */
 int32_t HITLS_CMS_GenFile(int32_t format, HITLS_CMS *cms, const BSL_Param *optionalParam, const char *path);
+
+#endif // HITLS_PKI_CMS_SIGNEDDATA
 
 #ifdef __cplusplus
 }
