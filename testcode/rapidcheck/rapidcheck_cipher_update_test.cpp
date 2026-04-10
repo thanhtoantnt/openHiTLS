@@ -176,7 +176,7 @@ void test_null_outlen() {
 }
 
 void test_xts_small_input() {
-    rc::check("CRYPT_EAL_CipherUpdate fails for XTS mode when inLen < 32",
+    rc::check("CRYPT_EAL_CipherUpdate fails for XTS mode when inLen < BLOCKSIZE (16)",
         []() {
             CRYPT_EAL_CipherCtx *ctx = CRYPT_EAL_CipherNewCtx(CRYPT_CIPHER_SM4_XTS);
             RC_PRE(ctx != nullptr);
@@ -193,6 +193,32 @@ void test_xts_small_input() {
             
             ret = CRYPT_EAL_CipherUpdate(ctx, inputData.data(), 1, output.data(), &outLen);
             RC_ASSERT(ret != CRYPT_SUCCESS);
+            
+            CRYPT_EAL_CipherDeinit(ctx);
+            CRYPT_EAL_CipherFreeCtx(ctx);
+        });
+}
+
+void test_xts_minimum_input() {
+    rc::check("CRYPT_EAL_CipherUpdate succeeds for XTS mode when inLen >= BLOCKSIZE (16)",
+        []() {
+            CRYPT_EAL_CipherCtx *ctx = CRYPT_EAL_CipherNewCtx(CRYPT_CIPHER_SM4_XTS);
+            RC_PRE(ctx != nullptr);
+            
+            auto keyData = *gen::container<std::vector<uint8_t>>(32, gen::arbitrary<uint8_t>());
+            auto ivData = genValidIV();
+            
+            int32_t ret = CRYPT_EAL_CipherInit(ctx, keyData.data(), 32, ivData.data(), 16, true);
+            RC_PRE(ret == CRYPT_SUCCESS);
+            
+            auto inLen = *gen::inRange(16, 128);
+            auto inputData = *gen::container<std::vector<uint8_t>>(inLen, gen::arbitrary<uint8_t>());
+            std::vector<uint8_t> output(inLen);
+            uint32_t outLen = inLen;
+            
+            ret = CRYPT_EAL_CipherUpdate(ctx, inputData.data(), inLen, output.data(), &outLen);
+            RC_ASSERT(ret == CRYPT_SUCCESS);
+            RC_ASSERT(outLen == inLen);
             
             CRYPT_EAL_CipherDeinit(ctx);
             CRYPT_EAL_CipherFreeCtx(ctx);
@@ -308,8 +334,8 @@ void test_block_cipher_outlen_invariant() {
         });
 }
 
-void test_xts_reserves_2_blocks() {
-    rc::check("CRYPT_EAL_CipherUpdate outLen reserves 2 blocks for XTS Final",
+void test_xts_outlen_equals_inlen() {
+    rc::check("CRYPT_EAL_CipherUpdate outLen equals inLen for XTS mode",
         []() {
             CRYPT_EAL_CipherCtx *ctx = CRYPT_EAL_CipherNewCtx(CRYPT_CIPHER_SM4_XTS);
             RC_PRE(ctx != nullptr);
@@ -320,24 +346,22 @@ void test_xts_reserves_2_blocks() {
             int32_t ret = CRYPT_EAL_CipherInit(ctx, keyData.data(), 32, ivData.data(), 16, true);
             RC_PRE(ret == CRYPT_SUCCESS);
             
-            auto inLen = *gen::inRange(32, 128);
+            auto inLen = *gen::inRange(16, 128);
             auto inputData = *gen::container<std::vector<uint8_t>>(inLen, gen::arbitrary<uint8_t>());
-            std::vector<uint8_t> output(inputData.size());
-            uint32_t outLen = output.size();
+            std::vector<uint8_t> output(inLen);
+            uint32_t outLen = inLen;
             
             ret = CRYPT_EAL_CipherUpdate(ctx, inputData.data(), inputData.size(), output.data(), &outLen);
             RC_ASSERT(ret == CRYPT_SUCCESS);
-            
-            RC_ASSERT(outLen % BLOCKSIZE == 0);
-            RC_ASSERT(outLen <= inputData.size() - 32);
+            RC_ASSERT(outLen == inputData.size());
             
             CRYPT_EAL_CipherDeinit(ctx);
             CRYPT_EAL_CipherFreeCtx(ctx);
         });
 }
 
-void test_xts_outlen_multiple_of_blocksize() {
-    rc::check("CRYPT_EAL_CipherUpdate outLen is multiple of BLOCKSIZE for XTS",
+void test_xts_final_no_output() {
+    rc::check("CRYPT_EAL_CipherFinal outputs 0 bytes for XTS mode",
         []() {
             CRYPT_EAL_CipherCtx *ctx = CRYPT_EAL_CipherNewCtx(CRYPT_CIPHER_SM4_XTS);
             RC_PRE(ctx != nullptr);
@@ -348,15 +372,19 @@ void test_xts_outlen_multiple_of_blocksize() {
             int32_t ret = CRYPT_EAL_CipherInit(ctx, keyData.data(), 32, ivData.data(), 16, true);
             RC_PRE(ret == CRYPT_SUCCESS);
             
-            auto inLen = *gen::inRange(32, 128);
+            auto inLen = *gen::inRange(16, 128);
             auto inputData = *gen::container<std::vector<uint8_t>>(inLen, gen::arbitrary<uint8_t>());
-            std::vector<uint8_t> output(inputData.size());
+            std::vector<uint8_t> output(inLen + BLOCKSIZE);
             uint32_t outLen = output.size();
             
             ret = CRYPT_EAL_CipherUpdate(ctx, inputData.data(), inputData.size(), output.data(), &outLen);
-            RC_ASSERT(ret == CRYPT_SUCCESS);
+            RC_PRE(ret == CRYPT_SUCCESS);
+            RC_PRE(outLen == inputData.size());
             
-            RC_ASSERT(outLen % BLOCKSIZE == 0);
+            uint32_t finalLen = BLOCKSIZE;
+            ret = CRYPT_EAL_CipherFinal(ctx, output.data() + outLen, &finalLen);
+            RC_ASSERT(ret == CRYPT_SUCCESS);
+            RC_ASSERT(finalLen == 0);
             
             CRYPT_EAL_CipherDeinit(ctx);
             CRYPT_EAL_CipherFreeCtx(ctx);
@@ -382,7 +410,7 @@ void test_outlen_non_negative() {
             RC_PRE(ret == CRYPT_SUCCESS);
             
             auto inLen = (algId == CRYPT_CIPHER_SM4_XTS) 
-                ? *gen::inRange(32, 128)
+                ? *gen::inRange(16, 128)
                 : *gen::inRange(1, 64);
             auto inputData = *gen::container<std::vector<uint8_t>>(inLen, gen::arbitrary<uint8_t>());
             std::vector<uint8_t> output(inputData.size() + BLOCKSIZE * 2);
@@ -485,8 +513,8 @@ void test_cbc_non_block_multiple() {
         });
 }
 
-void test_xts_32_bytes() {
-    rc::check("CRYPT_EAL_CipherUpdate outLen is 0 when inLen == 32 for XTS",
+void test_xts_16_bytes() {
+    rc::check("CRYPT_EAL_CipherUpdate outLen equals inLen when inLen == 16 for XTS",
         []() {
             CRYPT_EAL_CipherCtx *ctx = CRYPT_EAL_CipherNewCtx(CRYPT_CIPHER_SM4_XTS);
             RC_PRE(ctx != nullptr);
@@ -497,21 +525,21 @@ void test_xts_32_bytes() {
             int32_t ret = CRYPT_EAL_CipherInit(ctx, keyData.data(), 32, ivData.data(), 16, true);
             RC_PRE(ret == CRYPT_SUCCESS);
             
-            auto inputData = *gen::container<std::vector<uint8_t>>(32, gen::arbitrary<uint8_t>());
-            std::vector<uint8_t> output(32);
-            uint32_t outLen = 32;
+            auto inputData = *gen::container<std::vector<uint8_t>>(16, gen::arbitrary<uint8_t>());
+            std::vector<uint8_t> output(16);
+            uint32_t outLen = 16;
             
-            ret = CRYPT_EAL_CipherUpdate(ctx, inputData.data(), 32, output.data(), &outLen);
+            ret = CRYPT_EAL_CipherUpdate(ctx, inputData.data(), 16, output.data(), &outLen);
             RC_ASSERT(ret == CRYPT_SUCCESS);
-            RC_ASSERT(outLen == 0);
+            RC_ASSERT(outLen == 16);
             
             CRYPT_EAL_CipherDeinit(ctx);
             CRYPT_EAL_CipherFreeCtx(ctx);
         });
 }
 
-void test_xts_formula() {
-    rc::check("CRYPT_EAL_CipherUpdate outLen follows XTS formula",
+void test_xts_various_lengths() {
+    rc::check("CRYPT_EAL_CipherUpdate outLen equals inLen for various XTS input lengths",
         []() {
             CRYPT_EAL_CipherCtx *ctx = CRYPT_EAL_CipherNewCtx(CRYPT_CIPHER_SM4_XTS);
             RC_PRE(ctx != nullptr);
@@ -522,16 +550,14 @@ void test_xts_formula() {
             int32_t ret = CRYPT_EAL_CipherInit(ctx, keyData.data(), 32, ivData.data(), 16, true);
             RC_PRE(ret == CRYPT_SUCCESS);
             
-            auto inLen = *gen::inRange(48, 128);
+            auto inLen = *gen::inRange(16, 256);
             auto inputData = *gen::container<std::vector<uint8_t>>(inLen, gen::arbitrary<uint8_t>());
             std::vector<uint8_t> output(inLen);
-            uint32_t outLen = output.size();
+            uint32_t outLen = inLen;
             
             ret = CRYPT_EAL_CipherUpdate(ctx, inputData.data(), inLen, output.data(), &outLen);
             RC_ASSERT(ret == CRYPT_SUCCESS);
-            
-            uint32_t expectedOutLen = ((inLen / BLOCKSIZE) - 2) * BLOCKSIZE;
-            RC_ASSERT(outLen == expectedOutLen);
+            RC_ASSERT(outLen == inLen);
             
             CRYPT_EAL_CipherDeinit(ctx);
             CRYPT_EAL_CipherFreeCtx(ctx);
@@ -651,18 +677,19 @@ std::map<std::string, std::function<void()>> testRegistry = {
     {"null_out", test_null_out},
     {"null_outlen", test_null_outlen},
     {"xts_small_input", test_xts_small_input},
+    {"xts_minimum_input", test_xts_minimum_input},
     {"non_xts_small_input", test_non_xts_small_input},
     {"all_valid_params", test_all_valid_params},
     {"ctr_outlen_equals_inlen", test_ctr_outlen_equals_inlen},
     {"block_cipher_outlen_invariant", test_block_cipher_outlen_invariant},
-    {"xts_reserves_2_blocks", test_xts_reserves_2_blocks},
-    {"xts_outlen_multiple_of_blocksize", test_xts_outlen_multiple_of_blocksize},
+    {"xts_outlen_equals_inlen", test_xts_outlen_equals_inlen},
+    {"xts_final_no_output", test_xts_final_no_output},
     {"outlen_non_negative", test_outlen_non_negative},
     {"cbc_small_input", test_cbc_small_input},
     {"cbc_exact_block", test_cbc_exact_block},
     {"cbc_non_block_multiple", test_cbc_non_block_multiple},
-    {"xts_32_bytes", test_xts_32_bytes},
-    {"xts_formula", test_xts_formula},
+    {"xts_16_bytes", test_xts_16_bytes},
+    {"xts_various_lengths", test_xts_various_lengths},
     {"update_before_init", test_update_before_init},
     {"update_after_final", test_update_after_final},
     {"enc_dec", test_enc_dec},
@@ -679,7 +706,7 @@ void printUsage(const char* programName) {
               << "Examples:\n"
               << "  " << programName << "                          # Run all tests\n"
               << "  " << programName << " --list                   # List all test names\n"
-              << "  " << programName << " xts_32_bytes             # Run specific test\n"
+              << "  " << programName << " xts_outlen_equals_inlen  # Run specific test\n"
               << "  " << programName << " test1 test2 test3        # Run multiple tests\n";
 }
 

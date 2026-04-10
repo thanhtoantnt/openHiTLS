@@ -275,7 +275,7 @@ Most test files support command-line arguments for selective test execution:
 
 ### Available Tests for Cipher Update
 
-The `rapidcheck_cipher_update_test` has 21 individual tests:
+The `rapidcheck_cipher_update_test` has 24 individual tests:
 
 | Test Name | Description |
 |-----------|-------------|
@@ -284,22 +284,42 @@ The `rapidcheck_cipher_update_test` has 21 individual tests:
 | `null_in_zero_len` | Tests NULL input with zero length |
 | `null_out` | Tests NULL output buffer |
 | `null_outlen` | Tests NULL output length pointer |
-| `xts_small_input` | Tests XTS with input < 32 bytes |
+| `xts_small_input` | Tests XTS with input < BLOCKSIZE (16 bytes) - should fail |
+| `xts_minimum_input` | Tests XTS with input >= BLOCKSIZE (16 bytes) - should succeed |
 | `non_xts_small_input` | Tests non-XTS modes with small input |
 | `all_valid_params` | Tests with all valid parameters |
-| `ctr_outlen_equals_inlen` | Tests CTR mode output length |
+| `ctr_outlen_equals_inlen` | Tests CTR mode output length equals input length |
 | `block_cipher_outlen_invariant` | Tests block cipher output invariants |
-| `xts_reserves_2_blocks` | Tests XTS block reservation |
+| `xts_outlen_equals_inlen` | Tests XTS mode output length equals input length |
+| `xts_final_no_output` | Tests XTS Final outputs 0 bytes |
 | `outlen_non_negative` | Tests output length is non-negative |
 | `cbc_small_input` | Tests CBC with input < block size |
 | `cbc_exact_block` | Tests CBC with exact block size |
 | `cbc_non_block_multiple` | Tests CBC with non-block-multiple input |
-| `xts_32_bytes` | Tests XTS with exactly 32 bytes (**BUG FOUND**) |
-| `xts_formula` | Tests XTS output length formula |
+| `xts_16_bytes` | Tests XTS with exactly 16 bytes (minimum) |
+| `xts_various_lengths` | Tests XTS with various input lengths (16-256 bytes) |
 | `update_before_init` | Tests Update called before Init |
 | `update_after_final` | Tests Update called after Final |
 | `enc_dec` | Tests both encryption and decryption |
 | `multiple_updates` | Tests multiple sequential Update calls |
+
+### XTS Mode Behavior (Updated 2026-04-03)
+
+After upstream commit `741f6b48`, XTS mode behavior has changed:
+
+**Old Behavior (Before Commit)**:
+- Update reserved last 2 blocks for Final processing
+- `outLen = ((inLen / 16) - 2) * 16`
+- Minimum input was 32 bytes (2 blocks)
+
+**New Behavior (After Commit)**:
+- Each Update call processes all input data
+- `outLen == inLen` on success
+- Minimum input is 16 bytes (1 block)
+- Final outputs 0 bytes (no additional data)
+- Partial blocks are processed in Update, not Final
+
+This aligns XTS behavior with stream ciphers like CTR.
 
 ### Debugging Failed Tests
 
@@ -315,21 +335,6 @@ When a test fails, you can run it in isolation for easier debugging:
 # 3. Reproduce with the exact seed from the failure
 RC_PARAMS="seed=9023039774416759098" ./rapidcheck_cipher_update_test xts_32_bytes
 ```
-
-## Known Issues
-
-### XTS Mode Bug
-
-The test `xts_32_bytes` currently **FAILS** and exposes a real bug:
-
-- **Expected**: `outLen == 0` (XTS should reserve 2 blocks for Final)
-- **Actual**: `outLen == 32` (implementation doesn't reserve blocks)
-- **Documentation**: Claims reservation should happen (see `crypt_eal_cipher.h:159-162`)
-- **Implementation**: Doesn't match documentation (see `modes.c:542`)
-
-This bug is specific to openHiTLS and does NOT affect OpenSSL (verified by `rapidcheck_aes_openssl_ref_test`).
-
-See `XTS_BUG_ANALYSIS.md` for detailed analysis.
 
 ## Comparison with DeepState
 
