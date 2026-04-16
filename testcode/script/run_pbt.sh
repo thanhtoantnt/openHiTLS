@@ -176,7 +176,7 @@ run_single_test() {
     fi
     
     if [ -n "$NUM_TESTS" ]; then
-        export RC_PARAMS="maxSuccess=${1000}"
+        export RC_PARAMS="max_success=${NUM_TESTS}"
     fi
     
     local START_TIME=$(date +%s)
