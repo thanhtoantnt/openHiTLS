@@ -237,6 +237,24 @@ target_compile_definitions(rapidcheck_base64_test PRIVATE ${HITLS_COMMON_DEFS})
 target_link_libraries(rapidcheck_base64_test ${HITLS_COMMON_LIBS})
 
 # =============================================================================
+# ASN.1 Encode/Decode Tests
+# Covers: Sign encode/decode roundtrip, SM2 encrypt data encode/decode roundtrip,
+# length consistency, determinism, null inputs, zero/negative rejection
+# =============================================================================
+add_executable(rapidcheck_encode_test rapidcheck_encode_test.cpp)
+target_include_directories(rapidcheck_encode_test PRIVATE
+    ${TEST_INCLUDE_DIRS}
+    ${openHiTLS_SRC}/crypto/codecsdata/include
+    ${openHiTLS_SRC}/crypto/bn/include
+)
+target_compile_definitions(rapidcheck_encode_test PRIVATE
+    ${HITLS_COMMON_DEFS}
+    HITLS_CRYPTO_SM2_SIGN
+    HITLS_CRYPTO_SM2_CRYPT
+)
+target_link_libraries(rapidcheck_encode_test ${HITLS_COMMON_LIBS})
+
+# =============================================================================
 # Test Registration
 # =============================================================================
 enable_testing()
@@ -248,3 +266,4 @@ add_test(NAME RapidCheck_KDF COMMAND rapidcheck_kdf_test)
 add_test(NAME RapidCheck_PBKDF2 COMMAND rapidcheck_pbkdf2_test)
 add_test(NAME RapidCheck_ChaCha20Poly1305 COMMAND rapidcheck_chacha20poly1305_test)
 add_test(NAME RapidCheck_Base64 COMMAND rapidcheck_base64_test)
+add_test(NAME RapidCheck_Encode COMMAND rapidcheck_encode_test)

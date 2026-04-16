@@ -215,22 +215,22 @@ run_single_test() {
 
 run_tests() {
     local TESTS_TO_RUN=("$@")
-    
+
     if [ ${#TESTS_TO_RUN[@]} -eq 0 ]; then
-        TESTS_TO_RUN=("cipher_update" "aes_openssl_ref" "md" "mac" "kdf" "pbkdf2" "chacha20poly1305")
+        TESTS_TO_RUN=("cipher_update" "aes_openssl_ref" "md" "mac" "kdf" "pbkdf2" "chacha20poly1305" "base64" "encode")
     fi
-    
+
     print_banner
-    
+
     for test in "${TESTS_TO_RUN[@]}"; do
         case "$test" in
-            cipher_update|aes_openssl_ref|md|mac|kdf|pbkdf2|chacha20poly1305)
-                run_single_test "$test"
-                ;;
-            all)
-                run_tests cipher_update aes_openssl_ref md mac kdf pbkdf2 chacha20poly1305
-                ;;
-            *)
+        cipher_update|aes_openssl_ref|md|mac|kdf|pbkdf2|chacha20poly1305|base64|encode)
+            run_single_test "$test"
+            ;;
+        all)
+            run_tests cipher_update aes_openssl_ref md mac kdf pbkdf2 chacha20poly1305 base64 encode
+            ;;
+        *)
                 echo -e "${YELLOW}[WARN] Unknown test: $test${NC}"
                 ;;
         esac
