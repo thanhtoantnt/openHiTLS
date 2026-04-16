@@ -60,6 +60,13 @@ Key benefits:
 | `rapidcheck_aes_test.cpp` | Property tests for AES encryption/decryption |
 | `rapidcheck_hash_test.cpp` | Property tests for SM3 hash functions |
 | `rapidcheck_hmac_test.cpp` | Property tests for HMAC operations |
+| `rapidcheck_cipher_update_test.cpp` | Property tests for Cipher Update API |
+| `rapidcheck_aes_openssl_ref_test.cpp` | Differential testing against OpenSSL AES |
+| `rapidcheck_md_test.cpp` | Property tests for MD5/SHA1/SHA2/SHA3/SM3 |
+| `rapidcheck_mac_test.cpp` | Property tests for HMAC/CMAC |
+| `rapidcheck_kdf_test.cpp` | Property tests for HKDF |
+| `rapidcheck_pbkdf2_test.cpp` | Property tests for PBKDF2 |
+| `rapidcheck_chacha20poly1305_test.cpp` | Property tests for ChaCha20-Poly1305 AEAD |
 
 ## Properties Tested
 
@@ -320,6 +327,55 @@ After upstream commit `741f6b48`, XTS mode behavior has changed:
 - Partial blocks are processed in Update, not Final
 
 This aligns XTS behavior with stream ciphers like CTR.
+
+### PBKDF2 Tests (14 properties)
+
+The `rapidcheck_pbkdf2_test` generalizes unit tests from `testcode/sdv/testcase/crypto/pbkdf2/`:
+
+| Test Name | Description |
+|-----------|-------------|
+| `null_ctx_derive` | CRYPT_EAL_KdfDerive returns CRYPT_NULL_INPUT when ctx is NULL |
+| `null_output_derive` | CRYPT_EAL_KdfDerive returns CRYPT_NULL_INPUT when output is NULL |
+| `zero_iter_rejected` | PBKDF2 SetParam rejects iteration count 0 |
+| `zero_outlen_rejected` | CRYPT_EAL_KdfDerive rejects output length 0 |
+| `output_length_contract` | PBKDF2 output length exactly matches requested length |
+| `determinism` | Same inputs → same output |
+| `password_sensitivity` | Different password → different output |
+| `salt_sensitivity` | Different salt → different output |
+| `iter_sensitivity` | Different iteration count → different output |
+| `empty_password_accepted` | PBKDF2 accepts empty password |
+| `empty_salt_accepted` | PBKDF2 accepts empty salt |
+| `all_mac_algorithms` | PBKDF2 succeeds for all supported MAC algorithms |
+| `output_not_all_zeros` | PBKDF2 output is not all zeros |
+| `reinit_via_setparam` | PBKDF2 can be re-used by calling SetParam again |
+
+### ChaCha20-Poly1305 Tests (21 properties)
+
+The `rapidcheck_chacha20poly1305_test` generalizes unit tests from `testcode/sdv/testcase/crypto/chacha-poly/`:
+
+| Test Name | Description |
+|-----------|-------------|
+| `init_null_ctx` | CipherInit returns CRYPT_NULL_INPUT when ctx is NULL |
+| `init_null_key` | CipherInit returns CRYPT_NULL_INPUT when key is NULL |
+| `init_null_iv` | CipherInit returns CRYPT_NULL_INPUT when iv is NULL |
+| `init_invalid_key_len` | CipherInit rejects non-zero key length != 32 |
+| `init_invalid_iv_len` | CipherInit rejects iv length outside accepted range |
+| `reinit_before_init` | CipherReinit before Init returns CRYPT_EAL_ERR_STATE |
+| `reinit_null_iv` | CipherReinit returns CRYPT_NULL_INPUT when iv is NULL |
+| `reinit_null_ctx` | CipherReinit returns CRYPT_NULL_INPUT when ctx is NULL |
+| `reinit_invalid_iv_len` | CipherReinit rejects iv length outside accepted range |
+| `update_null_ctx` | CipherUpdate returns CRYPT_NULL_INPUT when ctx is NULL |
+| `update_null_in` | CipherUpdate returns CRYPT_NULL_INPUT when in is NULL |
+| `update_null_out` | CipherUpdate returns CRYPT_NULL_INPUT when out is NULL |
+| `update_null_outlen` | CipherUpdate returns CRYPT_NULL_INPUT when outLen is NULL |
+| `update_outlen_equals_inlen` | CipherUpdate outLen == inLen (stream cipher) |
+| `encrypt_decrypt_roundtrip` | decrypt(encrypt(P)) == P |
+| `determinism` | Same key+iv+AAD → same ciphertext |
+| `key_sensitivity` | Different key → different ciphertext |
+| `iv_sensitivity` | Different IV → different ciphertext |
+| `ciphertext_differs_plaintext` | Ciphertext body differs from plaintext |
+| `tag_integrity` | Flipping a ciphertext byte causes decryption failure |
+| `reinit_reuses_context` | CipherReinit allows encrypting a new message |
 
 ### Debugging Failed Tests
 

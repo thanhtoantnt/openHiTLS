@@ -53,40 +53,32 @@ print_usage() {
     echo "  --num-tests N       Number of test cases per property (default: 100)"
     echo ""
     echo "Test Names:"
-    echo "  aes                 Run AES property tests"
-    echo "  hash                Run SM3 hash property tests"
-    echo "  sha2                Run SHA-2 property tests"
-    echo "  sm4                 Run SM4 property tests"
-    echo "  bn                  Run Big Number property tests"
-    echo "  base64              Run Base64 property tests"
-    echo "  opt                 Run App Option property tests"
-    echo "  md5                 Run MD5 hash property tests"
-    echo "  sha1                Run SHA-1 hash property tests"
-    echo "  chacha20            Run ChaCha20 stream cipher property tests"
-    echo "  buffer              Run Buffer operations property tests"
-    echo "  all                 Run all tests (default)"
+    echo "  cipher_update         Run Cipher Update property tests"
+    echo "  aes_openssl_ref       Run AES OpenSSL reference tests (differential testing)"
+    echo "  md                    Run MD (Hash) property tests (MD5, SHA1, SHA2, SHA3, SM3)"
+    echo "  mac                   Run MAC property tests (HMAC, CMAC)"
+    echo "  kdf                   Run KDF/HKDF property tests"
+    echo "  pbkdf2                Run PBKDF2 property tests"
+    echo "  chacha20poly1305      Run ChaCha20-Poly1305 property tests"
+    echo "  all                   Run all tests (default)"
     echo ""
     echo "Examples:"
-    echo "  $0                  # Run all PBT tests"
-    echo "  $0 -b               # Build and run all tests"
-    echo "  $0 aes sm4          # Run only AES and SM4 tests"
-    echo "  $0 --seed 12345     # Run with specific seed"
+    echo "  $0                    # Run all PBT tests"
+    echo "  $0 -b                 # Build and run all tests"
+    echo "  $0 pbkdf2 chacha20poly1305  # Run specific test suites"
+    echo "  $0 --seed 12345       # Run with specific seed"
     echo ""
 }
 
 list_tests() {
     echo "Available PBT tests:"
-    echo "  aes       - AES encryption/decryption properties"
-    echo "  hash      - SM3 hash function properties"
-    echo "  sha2      - SHA-224/256/384/512 hash properties"
-    echo "  sm4       - SM4 block cipher properties"
-    echo "  bn        - Big Number arithmetic properties"
-    echo "  base64    - Base64 encoding/decoding properties"
-    echo "  opt       - Application option parsing properties"
-    echo "  md5       - MD5 hash function properties"
-    echo "  sha1      - SHA-1 hash function properties"
-    echo "  chacha20  - ChaCha20 stream cipher properties"
-    echo "  buffer    - Buffer operations properties"
+    echo "  cipher_update      - Cipher Update API properties (SM4 ECB/CBC/CTR/XTS)"
+    echo "  aes_openssl_ref    - AES OpenSSL reference/differential testing"
+    echo "  md                 - Hash/Digest properties (MD5, SHA1, SHA2, SHA3, SM3)"
+    echo "  mac                - MAC properties (HMAC-MD5/SHA1/SHA2/SHA3/SM3, CMAC-AES/SM4)"
+    echo "  kdf                - HKDF properties (SHA1/SHA2/SM3)"
+    echo "  pbkdf2             - PBKDF2 properties (all MAC algs, sensitivity, determinism)"
+    echo "  chacha20poly1305   - ChaCha20-Poly1305 properties (roundtrip, tag integrity, etc.)"
 }
 
 check_prerequisites() {
@@ -184,7 +176,7 @@ run_single_test() {
     fi
     
     if [ -n "$NUM_TESTS" ]; then
-        export RC_PARAMS="maxSuccess=${NUM_TESTS}"
+        export RC_PARAMS="maxSuccess=${1000}"
     fi
     
     local START_TIME=$(date +%s)
@@ -225,18 +217,18 @@ run_tests() {
     local TESTS_TO_RUN=("$@")
     
     if [ ${#TESTS_TO_RUN[@]} -eq 0 ]; then
-        TESTS_TO_RUN=("aes" "hash" "sha2" "sm4" "bn" "base64" "opt" "md5" "sha1" "chacha20" "buffer" "eal_aes_init")
+        TESTS_TO_RUN=("cipher_update" "aes_openssl_ref" "md" "mac" "kdf" "pbkdf2" "chacha20poly1305")
     fi
     
     print_banner
     
     for test in "${TESTS_TO_RUN[@]}"; do
         case "$test" in
-            aes|hash|sha2|sm4|bn|base64|opt|md5|sha1|chacha20|buffer|eal_aes_init)
+            cipher_update|aes_openssl_ref|md|mac|kdf|pbkdf2|chacha20poly1305)
                 run_single_test "$test"
                 ;;
             all)
-                run_tests aes hash sha2 sm4 bn base64 opt md5 sha1 chacha20 buffer eal_aes_init
+                run_tests cipher_update aes_openssl_ref md mac kdf pbkdf2 chacha20poly1305
                 ;;
             *)
                 echo -e "${YELLOW}[WARN] Unknown test: $test${NC}"
@@ -327,7 +319,7 @@ fi
 
 check_prerequisites
 
-if [ $BUILD -eq 1 ] || [ ! -f "${RAPIDCHECK_BUILD_DIR}/rapidcheck_aes_test" ]; then
+if [ $BUILD -eq 1 ] || [ ! -f "${RAPIDCHECK_BUILD_DIR}/rapidcheck_cipher_update_test" ]; then
     build_tests
 fi
 

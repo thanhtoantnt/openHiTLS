@@ -107,6 +107,9 @@ public:
             CRYPT_EAL_CipherInit(ctx_, key.data(), key.size(), 
                                   iv.empty() ? nullptr : iv.data(), 
                                   iv.empty() ? 0 : iv.size(), encrypt);
+            // Enable PKCS#7 padding for block ciphers (ECB, CBC) to match OpenSSL default
+            int32_t padding = 1;
+            CRYPT_EAL_CipherCtrl(ctx_, CRYPT_CTRL_SET_PADDING, &padding, sizeof(padding));
         }
     }
     
@@ -120,14 +123,14 @@ public:
     bool isValid() const { return ctx_ != nullptr; }
     
     int update(const std::vector<uint8_t>& input) {
-        if (!ctx_) return {};
+        if (!ctx_) return -1;
         
         std::vector<uint8_t> output(input.size() + 32);
         uint32_t outLen = output.size();
         
         int32_t ret = CRYPT_EAL_CipherUpdate(ctx_, input.data(), input.size(), 
                                               output.data(), &outLen);
-        RC_PRE(ret == CRYPT_SUCCESS);
+        if (ret != CRYPT_SUCCESS) return -1;
         
         return outLen;
     }
@@ -139,7 +142,7 @@ public:
         uint32_t outLen = output.size();
         
         int32_t ret = CRYPT_EAL_CipherFinal(ctx_, output.data(), &outLen);
-                RC_PRE(ret == CRYPT_SUCCESS);
+        if (ret != CRYPT_SUCCESS) return -1;
         
         return outLen;
     }

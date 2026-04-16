@@ -190,11 +190,47 @@ target_compile_definitions(rapidcheck_kdf_test PRIVATE
 target_link_libraries(rapidcheck_kdf_test ${HITLS_COMMON_LIBS})
 
 # =============================================================================
+# PBKDF2 Tests
+# Generalizes unit tests from pbkdf2 test suite
+# Covers: determinism, sensitivity, output length, null inputs, all MAC algs
+# =============================================================================
+add_executable(rapidcheck_pbkdf2_test rapidcheck_pbkdf2_test.cpp)
+target_include_directories(rapidcheck_pbkdf2_test PRIVATE ${TEST_INCLUDE_DIRS})
+target_compile_definitions(rapidcheck_pbkdf2_test PRIVATE
+    ${HITLS_COMMON_DEFS}
+    HITLS_CRYPTO_PBKDF2
+    HITLS_CRYPTO_HMAC
+    HITLS_CRYPTO_MD5
+    HITLS_CRYPTO_SHA1
+    HITLS_CRYPTO_SHA2
+    HITLS_CRYPTO_SM3
+)
+target_link_libraries(rapidcheck_pbkdf2_test ${HITLS_COMMON_LIBS})
+
+# =============================================================================
+# ChaCha20-Poly1305 Tests
+# Generalizes unit tests from chacha-poly test suite
+# Covers: null inputs, invalid params, roundtrip, determinism, sensitivity,
+#         tag integrity, stream outLen == inLen
+# =============================================================================
+add_executable(rapidcheck_chacha20poly1305_test rapidcheck_chacha20poly1305_test.cpp)
+target_include_directories(rapidcheck_chacha20poly1305_test PRIVATE ${TEST_INCLUDE_DIRS})
+target_compile_definitions(rapidcheck_chacha20poly1305_test PRIVATE
+    ${HITLS_COMMON_DEFS}
+    HITLS_CRYPTO_CHACHA20
+    HITLS_CRYPTO_POLY1305
+    HITLS_CRYPTO_CHACHA20_POLY1305
+)
+target_link_libraries(rapidcheck_chacha20poly1305_test ${HITLS_COMMON_LIBS})
+
+# =============================================================================
 # Test Registration
 # =============================================================================
 enable_testing()
-add_test(NAME RapidCheck_Cipher_Update    COMMAND rapidcheck_cipher_update_test)
-add_test(NAME RapidCheck_AES_OpenSSL_Ref  COMMAND rapidcheck_aes_openssl_ref_test)
-add_test(NAME RapidCheck_MD               COMMAND rapidcheck_md_test)
-add_test(NAME RapidCheck_MAC              COMMAND rapidcheck_mac_test)
-add_test(NAME RapidCheck_KDF              COMMAND rapidcheck_kdf_test)
+add_test(NAME RapidCheck_Cipher_Update       COMMAND rapidcheck_cipher_update_test)
+add_test(NAME RapidCheck_AES_OpenSSL_Ref     COMMAND rapidcheck_aes_openssl_ref_test)
+add_test(NAME RapidCheck_MD                  COMMAND rapidcheck_md_test)
+add_test(NAME RapidCheck_MAC                 COMMAND rapidcheck_mac_test)
+add_test(NAME RapidCheck_KDF                 COMMAND rapidcheck_kdf_test)
+add_test(NAME RapidCheck_PBKDF2              COMMAND rapidcheck_pbkdf2_test)
+add_test(NAME RapidCheck_ChaCha20Poly1305    COMMAND rapidcheck_chacha20poly1305_test)
