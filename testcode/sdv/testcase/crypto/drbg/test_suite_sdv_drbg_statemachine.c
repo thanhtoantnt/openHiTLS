@@ -33,6 +33,7 @@
 #include "eal_drbg_local.h"
 #include "bsl_err_internal.h"
 #include "bsl_err.h"
+#include "crypt_drbg.h"
 
 /* END_HEADER */
 
@@ -369,7 +370,7 @@ void SDV_DRBG_STATE_MACHINE_BASIC_TC001(int algId)
     
     /* Step 5: Uninstantiate - READY -> UNINITIALISED */
     refResult = RefModel_Uninstantiate(&refModel);
-    implRet = CRYPT_EAL_DrbgUninstantiate(drbg);
+    implRet = DRBG_Uninstantiate(implCtx);
     ASSERT_EQ(implRet, refResult.retCode);
     ASSERT_EQ(ImplStateToRef(implCtx->state), refResult.stateAfter);
     
@@ -481,7 +482,6 @@ void SDV_DRBG_STATE_MACHINE_RANDOM_SEQUENCE_TC001(int algId, int numOps, int see
     /* Execute random operation sequence */
     for (int i = 0; i < numOps; i++) {
         uint32_t op = SimplePrng(&prngState) % REF_OP_COUNT;
-        RefDrbgState implStateBefore = ImplStateToRef(implCtx->state);
         
         switch (op) {
             case REF_OP_INSTANTIATE:
@@ -501,7 +501,7 @@ void SDV_DRBG_STATE_MACHINE_RANDOM_SEQUENCE_TC001(int algId, int numOps, int see
                 
             case REF_OP_UNINSTANTIATE:
                 refResult = RefModel_Uninstantiate(&refModel);
-                implRet = CRYPT_EAL_DrbgUninstantiate(drbg);
+                implRet = DRBG_Uninstantiate(implCtx);
                 break;
                 
             default:
@@ -574,7 +574,7 @@ void SDV_DRBG_STATE_MACHINE_ERROR_RECOVERY_TC001(int algId)
     
     /* Step 2: Uninstantiate to return to UNINITIALISED */
     refResult = RefModel_Uninstantiate(&refModel);
-    implRet = CRYPT_EAL_DrbgUninstantiate(drbg);
+    implRet = DRBG_Uninstantiate(implCtx);
     ASSERT_EQ(implRet, CRYPT_SUCCESS);
     ASSERT_EQ(ImplStateToRef(implCtx->state), REF_STATE_UNINITIALISED);
     
@@ -586,7 +586,7 @@ void SDV_DRBG_STATE_MACHINE_ERROR_RECOVERY_TC001(int algId)
     
     /* Step 4: Uninstantiate again */
     refResult = RefModel_Uninstantiate(&refModel);
-    implRet = CRYPT_EAL_DrbgUninstantiate(drbg);
+    implRet = DRBG_Uninstantiate(implCtx);
     ASSERT_EQ(implRet, CRYPT_SUCCESS);
     ASSERT_EQ(ImplStateToRef(implCtx->state), REF_STATE_UNINITIALISED);
     
@@ -654,7 +654,7 @@ void SDV_DRBG_STATE_MACHINE_INVALID_STATE_TC001(int algId)
     
     /* Step 4: Uninstantiate */
     refResult = RefModel_Uninstantiate(&refModel);
-    implRet = CRYPT_EAL_DrbgUninstantiate(drbg);
+    implRet = DRBG_Uninstantiate(implCtx);
     ASSERT_EQ(implRet, CRYPT_SUCCESS);
     
 EXIT:
@@ -727,7 +727,7 @@ void SDV_DRBG_STATE_MACHINE_MULTI_SEQUENCE_TC001(int algId)
                     
                 case REF_OP_UNINSTANTIATE:
                     refResult = RefModel_Uninstantiate(&refModel);
-                    implRet = CRYPT_EAL_DrbgUninstantiate(drbg);
+                    implRet = DRBG_Uninstantiate(implCtx);
                     break;
                     
                 default:
