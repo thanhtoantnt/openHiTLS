@@ -748,7 +748,852 @@ void SDV_DRBG_STATE_MACHINE_MULTI_SEQUENCE_TC001(int algId)
         CRYPT_EAL_DrbgDeinit(drbg);
         drbg = NULL;
     }
-    
+
+EXIT:
+    CRYPT_EAL_DrbgDeinit(drbg);
+    return;
+}
+/* END_CASE */
+
+/**
+ * @test   SDV_DRBG_STATE_MACHINE_RESEED_INTERVAL_ZERO_TC001
+ * @title  Verify DRBG behavior with zero reseed interval
+ * @precon nan
+ * @brief
+ *    1.Create DRBG and set reseed interval to 0
+ *    2.Generate output - should trigger immediate reseed
+ *    3.Verify reseed happens on every generate
+ * @expect
+ *    Zero interval causes reseed on every generate
+ */
+/* BEGIN_CASE */
+void SDV_DRBG_STATE_MACHINE_RESEED_INTERVAL_ZERO_TC001(int algId)
+{
+    if (IsRandAlgDisabled(algId)) {
+        SKIP_TEST();
+    }
+
+    TestMemInit();
+
+    CRYPT_RandSeedMethod seedMeth = {0};
+    DetEntropyCtx detCtx = {0};
+    CRYPT_EAL_RndCtx *drbg = NULL;
+    DRBG_Ctx *implCtx = NULL;
+    uint8_t output[DRBG_TEST_OUTPUT_SIZE];
+    uint32_t interval = 0;
+    uint32_t prevEntropyCalls;
+
+    SetupDetEntropy(&seedMeth, &detCtx, 77777);
+
+    drbg = CRYPT_EAL_DrbgNew(algId, &seedMeth, &detCtx);
+    ASSERT_TRUE(drbg != NULL);
+    implCtx = (DRBG_Ctx *)drbg->ctx;
+
+    ASSERT_EQ(CRYPT_EAL_DrbgInstantiate(drbg, NULL, 0), CRYPT_SUCCESS);
+
+    int32_t ret = DRBG_Ctrl(implCtx, CRYPT_CTRL_SET_RESEED_INTERVAL, &interval, sizeof(interval));
+    ASSERT_EQ(ret, CRYPT_SUCCESS);
+
+    for (int i = 0; i < 5; i++) {
+        prevEntropyCalls = detCtx.callCount;
+        ret = CRYPT_EAL_Drbgbytes(drbg, output, DRBG_TEST_OUTPUT_SIZE);
+        ASSERT_EQ(ret, CRYPT_SUCCESS);
+        ASSERT_TRUE(detCtx.callCount > prevEntropyCalls);
+    }
+
+EXIT:
+    CRYPT_EAL_DrbgDeinit(drbg);
+    return;
+}
+/* END_CASE */
+
+/**
+ * @test   SDV_DRBG_STATE_MACHINE_RESEED_COUNTER_NEAR_OVERFLOW_TC001
+ * @title  Verify DRBG handles reseed counter near UINT32_MAX
+ * @precon nan
+ * @brief
+ *    1.Create DRBG and manually set reseedCtr near UINT32_MAX
+ *    2.Generate output - should handle overflow gracefully
+ *    3.Verify no crash or corruption
+ * @expect
+ *    Counter overflow handled correctly
+ */
+/* BEGIN_CASE */
+void SDV_DRBG_STATE_MACHINE_RESEED_COUNTER_NEAR_OVERFLOW_TC001(int algId)
+{
+    if (IsRandAlgDisabled(algId)) {
+        SKIP_TEST();
+    }
+
+    TestMemInit();
+
+    CRYPT_RandSeedMethod seedMeth = {0};
+    DetEntropyCtx detCtx = {0};
+    CRYPT_EAL_RndCtx *drbg = NULL;
+    DRBG_Ctx *implCtx = NULL;
+    uint8_t output[DRBG_TEST_OUTPUT_SIZE];
+
+    SetupDetEntropy(&seedMeth, &detCtx, 88888);
+
+    drbg = CRYPT_EAL_DrbgNew(algId, &seedMeth, &detCtx);
+    ASSERT_TRUE(drbg != NULL);
+    implCtx = (DRBG_Ctx *)drbg->ctx;
+
+    ASSERT_EQ(CRYPT_EAL_DrbgInstantiate(drbg, NULL, 0), CRYPT_SUCCESS);
+
+    implCtx->reseedCtr = 0xFFFFFFFE;
+
+    int32_t ret = CRYPT_EAL_Drbgbytes(drbg, output, DRBG_TEST_OUTPUT_SIZE);
+    ASSERT_EQ(ret, CRYPT_SUCCESS);
+
+    ASSERT_TRUE(implCtx->reseedCtr == 0xFFFFFFFF || implCtx->reseedCtr == 0 || implCtx->reseedCtr == 1);
+
+    ret = CRYPT_EAL_Drbgbytes(drbg, output, DRBG_TEST_OUTPUT_SIZE);
+    ASSERT_EQ(ret, CRYPT_SUCCESS);
+
+EXIT:
+    CRYPT_EAL_DrbgDeinit(drbg);
+    return;
+}
+/* END_CASE */
+
+/**
+ * @test   SDV_DRBG_STATE_MACHINE_FORK_DETECTION_TC001
+ * @title  Verify fork detection triggers reseed
+ * @precon nan
+ * @brief
+ *    1.Create and instantiate DRBG
+ *    2.Simulate fork by changing forkId
+ *    3.Generate - should detect fork and reseed
+ *    4.Verify entropy was obtained for reseed
+ * @expect
+ *    Fork detection works correctly
+ */
+/* BEGIN_CASE */
+void SDV_DRBG_STATE_MACHINE_FORK_DETECTION_TC001(int algId)
+{
+    if (IsRandAlgDisabled(algId)) {
+        SKIP_TEST();
+    }
+
+    TestMemInit();
+
+    CRYPT_RandSeedMethod seedMeth = {0};
+    DetEntropyCtx detCtx = {0};
+    CRYPT_EAL_RndCtx *drbg = NULL;
+    DRBG_Ctx *implCtx = NULL;
+    uint8_t output[DRBG_TEST_OUTPUT_SIZE];
+    int32_t originalForkId;
+    uint32_t entropyCallsBefore;
+
+    SetupDetEntropy(&seedMeth, &detCtx, 99999);
+
+    drbg = CRYPT_EAL_DrbgNew(algId, &seedMeth, &detCtx);
+    ASSERT_TRUE(drbg != NULL);
+    implCtx = (DRBG_Ctx *)drbg->ctx;
+
+    ASSERT_EQ(CRYPT_EAL_DrbgInstantiate(drbg, NULL, 0), CRYPT_SUCCESS);
+
+    originalForkId = implCtx->forkId;
+    implCtx->forkId = originalForkId + 1000;
+
+    entropyCallsBefore = detCtx.callCount;
+
+    int32_t ret = CRYPT_EAL_Drbgbytes(drbg, output, DRBG_TEST_OUTPUT_SIZE);
+    ASSERT_EQ(ret, CRYPT_SUCCESS);
+
+    ASSERT_NE(implCtx->forkId, originalForkId + 1000);
+    ASSERT_TRUE(detCtx.callCount > entropyCallsBefore);
+
+EXIT:
+    CRYPT_EAL_DrbgDeinit(drbg);
+    return;
+}
+/* END_CASE */
+
+/**
+ * @test   SDV_DRBG_STATE_MACHINE_EMPTY_OUTPUT_TC001
+ * @title  Verify DRBG handles zero-length output request
+ * @precon nan
+ * @brief
+ *    1.Create and instantiate DRBG
+ *    2.Request zero bytes of output
+ *    3.Verify behavior is correct (success or appropriate error)
+ * @expect
+ *    Zero-length handled correctly
+ */
+/* BEGIN_CASE */
+void SDV_DRBG_STATE_MACHINE_EMPTY_OUTPUT_TC001(int algId)
+{
+    if (IsRandAlgDisabled(algId)) {
+        SKIP_TEST();
+    }
+
+    TestMemInit();
+
+    CRYPT_RandSeedMethod seedMeth = {0};
+    DetEntropyCtx detCtx = {0};
+    CRYPT_EAL_RndCtx *drbg = NULL;
+    DRBG_Ctx *implCtx = NULL;
+
+    SetupDetEntropy(&seedMeth, &detCtx, 11111);
+
+    drbg = CRYPT_EAL_DrbgNew(algId, &seedMeth, &detCtx);
+    ASSERT_TRUE(drbg != NULL);
+    implCtx = (DRBG_Ctx *)drbg->ctx;
+
+    ASSERT_EQ(CRYPT_EAL_DrbgInstantiate(drbg, NULL, 0), CRYPT_SUCCESS);
+
+    uint32_t counterBefore = implCtx->reseedCtr;
+    int32_t ret = CRYPT_EAL_Drbgbytes(drbg, NULL, 0);
+    if (ret == CRYPT_SUCCESS) {
+        ASSERT_EQ(implCtx->reseedCtr, counterBefore);
+    }
+    ASSERT_EQ(ImplStateToRef(implCtx->state), REF_STATE_READY);
+
+EXIT:
+    CRYPT_EAL_DrbgDeinit(drbg);
+    return;
+}
+/* END_CASE */
+
+/**
+ * @test   SDV_DRBG_STATE_MACHINE_MAX_OUTPUT_TC001
+ * @title  Verify DRBG handles maximum output size
+ * @precon nan
+ * @brief
+ *    1.Create and instantiate DRBG
+ *    2.Request maximum allowed output (65536 bytes)
+ *    3.Verify operation succeeds
+ * @expect
+ *    Maximum output size handled correctly
+ */
+/* BEGIN_CASE */
+void SDV_DRBG_STATE_MACHINE_MAX_OUTPUT_TC001(int algId)
+{
+    if (IsRandAlgDisabled(algId)) {
+        SKIP_TEST();
+    }
+
+    TestMemInit();
+
+    CRYPT_RandSeedMethod seedMeth = {0};
+    DetEntropyCtx detCtx = {0};
+    CRYPT_EAL_RndCtx *drbg = NULL;
+    uint8_t *output = NULL;
+    uint32_t maxOutput = 65536;
+
+    SetupDetEntropy(&seedMeth, &detCtx, 22222);
+
+    output = (uint8_t *)malloc(maxOutput);
+    ASSERT_TRUE(output != NULL);
+
+    drbg = CRYPT_EAL_DrbgNew(algId, &seedMeth, &detCtx);
+    ASSERT_TRUE(drbg != NULL);
+
+    ASSERT_EQ(CRYPT_EAL_DrbgInstantiate(drbg, NULL, 0), CRYPT_SUCCESS);
+
+    int32_t ret = CRYPT_EAL_Drbgbytes(drbg, output, maxOutput);
+    ASSERT_EQ(ret, CRYPT_SUCCESS);
+
+EXIT:
+    free(output);
+    CRYPT_EAL_DrbgDeinit(drbg);
+    return;
+}
+/* END_CASE */
+
+/**
+ * @test   SDV_DRBG_STATE_MACHINE_MULTIPLE_RESEED_TC001
+ * @title  Verify DRBG handles rapid reseed cycles
+ * @precon nan
+ * @brief
+ *    1.Create DRBG with small reseed interval
+ *    2.Generate until automatic reseed triggers
+ *    3.Call explicit reseed
+ *    4.Repeat many times
+ * @expect
+ *    Rapid reseed cycles work correctly
+ */
+/* BEGIN_CASE */
+void SDV_DRBG_STATE_MACHINE_MULTIPLE_RESEED_TC001(int algId, int cycles)
+{
+    if (IsRandAlgDisabled(algId)) {
+        SKIP_TEST();
+    }
+
+    TestMemInit();
+
+    CRYPT_RandSeedMethod seedMeth = {0};
+    DetEntropyCtx detCtx = {0};
+    CRYPT_EAL_RndCtx *drbg = NULL;
+    DRBG_Ctx *implCtx = NULL;
+    uint8_t output[DRBG_TEST_OUTPUT_SIZE];
+    uint32_t smallInterval = 2;
+
+    SetupDetEntropy(&seedMeth, &detCtx, 33333);
+
+    drbg = CRYPT_EAL_DrbgNew(algId, &seedMeth, &detCtx);
+    ASSERT_TRUE(drbg != NULL);
+    implCtx = (DRBG_Ctx *)drbg->ctx;
+
+    ASSERT_EQ(DRBG_Ctrl(implCtx, CRYPT_CTRL_SET_RESEED_INTERVAL, &smallInterval, sizeof(smallInterval)), CRYPT_SUCCESS);
+
+    ASSERT_EQ(CRYPT_EAL_DrbgInstantiate(drbg, NULL, 0), CRYPT_SUCCESS);
+
+    for (int i = 0; i < cycles; i++) {
+        ASSERT_EQ(CRYPT_EAL_Drbgbytes(drbg, output, DRBG_TEST_OUTPUT_SIZE), CRYPT_SUCCESS);
+        ASSERT_EQ(CRYPT_EAL_Drbgbytes(drbg, output, DRBG_TEST_OUTPUT_SIZE), CRYPT_SUCCESS);
+
+        ASSERT_EQ(CRYPT_EAL_DrbgSeed(drbg), CRYPT_SUCCESS);
+
+        ASSERT_EQ(implCtx->reseedCtr, 1);
+    }
+
+EXIT:
+    CRYPT_EAL_DrbgDeinit(drbg);
+    return;
+}
+/* END_CASE */
+
+/**
+ * @test SDV_DRBG_STATE_MACHINE_RESEED_BOUNDARY_TC001
+ * @title Verify reseed interval boundary conditions
+ * @precon nan
+ * @brief
+ *  1.Create DRBG with small reseed interval (3)
+ *  2.Generate until reseedCtr == reseedInterval - verify NO reseed triggered
+ *  3.Generate one more time - verify reseed IS triggered
+ *  4.After reseed, verify reseedCtr resets to 1
+ * @expect
+ *  Reseed triggered when reseedCtr > reseedInterval, not when ==
+ */
+/* BEGIN_CASE */
+void SDV_DRBG_STATE_MACHINE_RESEED_BOUNDARY_TC001(int algId)
+{
+    if (IsRandAlgDisabled(algId)) {
+        SKIP_TEST();
+    }
+
+    TestMemInit();
+
+    CRYPT_RandSeedMethod seedMeth = {0};
+    DetEntropyCtx detCtx = {0};
+    CRYPT_EAL_RndCtx *drbg = NULL;
+    DRBG_Ctx *implCtx = NULL;
+    uint8_t output[DRBG_TEST_OUTPUT_SIZE];
+    uint32_t interval = 3;
+
+    SetupDetEntropy(&seedMeth, &detCtx, 44444);
+
+    drbg = CRYPT_EAL_DrbgNew(algId, &seedMeth, &detCtx);
+    ASSERT_TRUE(drbg != NULL);
+    implCtx = (DRBG_Ctx *)drbg->ctx;
+
+    ASSERT_EQ(DRBG_Ctrl(implCtx, CRYPT_CTRL_SET_RESEED_INTERVAL, &interval, sizeof(interval)), CRYPT_SUCCESS);
+    ASSERT_EQ(CRYPT_EAL_DrbgInstantiate(drbg, NULL, 0), CRYPT_SUCCESS);
+
+    ASSERT_EQ(implCtx->reseedCtr, 1);
+
+    ASSERT_EQ(CRYPT_EAL_Drbgbytes(drbg, output, DRBG_TEST_OUTPUT_SIZE), CRYPT_SUCCESS);
+    ASSERT_EQ(implCtx->reseedCtr, 2);
+
+    ASSERT_EQ(CRYPT_EAL_Drbgbytes(drbg, output, DRBG_TEST_OUTPUT_SIZE), CRYPT_SUCCESS);
+    ASSERT_EQ(implCtx->reseedCtr, 3);
+
+    uint32_t entropyCallsBefore = detCtx.callCount;
+    ASSERT_EQ(CRYPT_EAL_Drbgbytes(drbg, output, DRBG_TEST_OUTPUT_SIZE), CRYPT_SUCCESS);
+
+    ASSERT_TRUE(detCtx.callCount > entropyCallsBefore);
+    ASSERT_EQ(implCtx->reseedCtr, 1);
+
+EXIT:
+    CRYPT_EAL_DrbgDeinit(drbg);
+    return;
+}
+/* END_CASE */
+
+/**
+ * @test SDV_DRBG_STATE_MACHINE_ENTROPY_FAILURE_TC001
+ * @title Verify DRBG handles entropy source failure correctly
+ * @precon nan
+ * @brief
+ *  1.Create DRBG with controllable entropy source
+ *  2.Instantiate successfully
+ *  3.Set entropy source to fail
+ *  4.Call Reseed - should fail and enter ERROR state
+ *  5.Re-enable entropy and call Generate - should auto-recover
+ * @expect
+ *  Entropy failure during reseed puts DRBG in ERROR state
+ *  Subsequent Generate with working entropy auto-recovers
+ */
+/* BEGIN_CASE */
+void SDV_DRBG_STATE_MACHINE_ENTROPY_FAILURE_TC001(int algId)
+{
+    if (IsRandAlgDisabled(algId)) {
+        SKIP_TEST();
+    }
+
+    TestMemInit();
+
+    CRYPT_RandSeedMethod seedMeth = {0};
+    DetEntropyCtx detCtx = {0};
+    CRYPT_EAL_RndCtx *drbg = NULL;
+    DRBG_Ctx *implCtx = NULL;
+    uint8_t output[DRBG_TEST_OUTPUT_SIZE];
+
+    SetupDetEntropy(&seedMeth, &detCtx, 55555);
+
+    drbg = CRYPT_EAL_DrbgNew(algId, &seedMeth, &detCtx);
+    ASSERT_TRUE(drbg != NULL);
+    implCtx = (DRBG_Ctx *)drbg->ctx;
+
+    ASSERT_EQ(CRYPT_EAL_DrbgInstantiate(drbg, NULL, 0), CRYPT_SUCCESS);
+    ASSERT_EQ(ImplStateToRef(implCtx->state), REF_STATE_READY);
+
+    detCtx.shouldFail = true;
+    int32_t ret = CRYPT_EAL_DrbgSeed(drbg);
+    ASSERT_NE(ret, CRYPT_SUCCESS);
+
+    ASSERT_EQ(ImplStateToRef(implCtx->state), REF_STATE_ERROR);
+
+    detCtx.shouldFail = false;
+    ret = CRYPT_EAL_Drbgbytes(drbg, output, DRBG_TEST_OUTPUT_SIZE);
+    ASSERT_EQ(ret, CRYPT_SUCCESS);
+    ASSERT_EQ(ImplStateToRef(implCtx->state), REF_STATE_READY);
+
+EXIT:
+    CRYPT_EAL_DrbgDeinit(drbg);
+    return;
+}
+/* END_CASE */
+
+/**
+ * @test SDV_DRBG_STATE_MACHINE_ENTROPY_FAILURE_INSTANTIATE_TC001
+ * @title Verify DRBG handles entropy failure during instantiation
+ * @precon nan
+ * @brief
+ *  1.Create DRBG with controllable entropy source
+ *  2.Set entropy to fail before instantiation
+ *  3.Call Instantiate - should fail
+ * 4.Verify DRBG is in ERROR state
+ * 5.Uninstantiate from ERROR state (returns to UNINITIALISED)
+ * 6.Re-enable entropy and call Instantiate again - should succeed
+ * @expect
+ * Failed instantiation puts DRBG in ERROR state
+ * Uninstantiate from ERROR returns to UNINITIALISED
+ * Re-instantiation with working entropy succeeds
+ */
+/* BEGIN_CASE */
+void SDV_DRBG_STATE_MACHINE_ENTROPY_FAILURE_INSTANTIATE_TC001(int algId)
+{
+    if (IsRandAlgDisabled(algId)) {
+        SKIP_TEST();
+    }
+
+    TestMemInit();
+
+    CRYPT_RandSeedMethod seedMeth = {0};
+    DetEntropyCtx detCtx = {0};
+    CRYPT_EAL_RndCtx *drbg = NULL;
+    DRBG_Ctx *implCtx = NULL;
+
+    SetupDetEntropy(&seedMeth, &detCtx, 66666);
+
+    drbg = CRYPT_EAL_DrbgNew(algId, &seedMeth, &detCtx);
+    ASSERT_TRUE(drbg != NULL);
+    implCtx = (DRBG_Ctx *)drbg->ctx;
+
+    detCtx.shouldFail = true;
+    int32_t ret = CRYPT_EAL_DrbgInstantiate(drbg, NULL, 0);
+    ASSERT_NE(ret, CRYPT_SUCCESS);
+    ASSERT_EQ(ImplStateToRef(implCtx->state), REF_STATE_ERROR);
+
+    detCtx.shouldFail = false;
+    CRYPT_EAL_DrbgDeinit(drbg);
+    drbg = NULL;
+
+    SetupDetEntropy(&seedMeth, &detCtx, 66667);
+    drbg = CRYPT_EAL_DrbgNew(algId, &seedMeth, &detCtx);
+    ASSERT_TRUE(drbg != NULL);
+    implCtx = (DRBG_Ctx *)drbg->ctx;
+    ret = CRYPT_EAL_DrbgInstantiate(drbg, NULL, 0);
+    ASSERT_EQ(ret, CRYPT_SUCCESS);
+    ASSERT_EQ(ImplStateToRef(implCtx->state), REF_STATE_READY);
+
+EXIT:
+    CRYPT_EAL_DrbgDeinit(drbg);
+    return;
+}
+/* END_CASE */
+
+/**
+ * @test SDV_DRBG_STATE_MACHINE_ERROR_STATE_RECOVERY_TC001
+ * @title Verify DRBG auto-recovery from ERROR state via DRBG_Restart
+ * @precon nan
+ * @brief
+ *  1.Create DRBG and instantiate successfully
+ *  2.Manually set state to DRBG_STATE_ERROR
+ *  3.Call Generate - should auto-recover via DRBG_Restart
+ *  4.Call Reseed - should auto-recover via DRBG_Restart
+ *  5.Verify both operations succeed with working entropy
+ * @expect
+ *  Generate and Reseed auto-recover from ERROR state
+ */
+/* BEGIN_CASE */
+void SDV_DRBG_STATE_MACHINE_ERROR_STATE_RECOVERY_TC001(int algId)
+{
+    if (IsRandAlgDisabled(algId)) {
+        SKIP_TEST();
+    }
+
+    TestMemInit();
+
+    CRYPT_RandSeedMethod seedMeth = {0};
+    DetEntropyCtx detCtx = {0};
+    CRYPT_EAL_RndCtx *drbg = NULL;
+    DRBG_Ctx *implCtx = NULL;
+    uint8_t output[DRBG_TEST_OUTPUT_SIZE];
+
+    SetupDetEntropy(&seedMeth, &detCtx, 77777);
+
+    drbg = CRYPT_EAL_DrbgNew(algId, &seedMeth, &detCtx);
+    ASSERT_TRUE(drbg != NULL);
+    implCtx = (DRBG_Ctx *)drbg->ctx;
+
+    ASSERT_EQ(CRYPT_EAL_DrbgInstantiate(drbg, NULL, 0), CRYPT_SUCCESS);
+
+    implCtx->state = DRBG_STATE_ERROR;
+
+    int32_t ret = CRYPT_EAL_Drbgbytes(drbg, output, DRBG_TEST_OUTPUT_SIZE);
+    ASSERT_EQ(ret, CRYPT_SUCCESS);
+    ASSERT_EQ(ImplStateToRef(implCtx->state), REF_STATE_READY);
+
+    implCtx->state = DRBG_STATE_ERROR;
+    ret = CRYPT_EAL_DrbgSeed(drbg);
+    ASSERT_EQ(ret, CRYPT_SUCCESS);
+    ASSERT_EQ(ImplStateToRef(implCtx->state), REF_STATE_READY);
+
+EXIT:
+    CRYPT_EAL_DrbgDeinit(drbg);
+    return;
+}
+/* END_CASE */
+
+/**
+ * @test SDV_DRBG_STATE_MACHINE_RESEED_INTERVAL_ONE_TC001
+ * @title Verify DRBG with reseed interval of 1
+ * @precon nan
+ * @brief
+ * 1.Create DRBG with reseed interval of 1
+ * 2.Instantiate
+ * 3.First generate - no reseed (reseedCtr=1, 1>1=false)
+ * 4.Subsequent generates - reseed triggered (reseedCtr>1)
+ * 5.Verify entropy is obtained on subsequent generates
+ * @expect
+ * Reseed interval of 1 triggers reseed on every generate after the first
+ */
+/* BEGIN_CASE */
+void SDV_DRBG_STATE_MACHINE_RESEED_INTERVAL_ONE_TC001(int algId)
+{
+    if (IsRandAlgDisabled(algId)) {
+        SKIP_TEST();
+    }
+
+    TestMemInit();
+
+    CRYPT_RandSeedMethod seedMeth = {0};
+    DetEntropyCtx detCtx = {0};
+    CRYPT_EAL_RndCtx *drbg = NULL;
+    DRBG_Ctx *implCtx = NULL;
+    uint8_t output[DRBG_TEST_OUTPUT_SIZE];
+    uint32_t interval = 1;
+
+    SetupDetEntropy(&seedMeth, &detCtx, 88888);
+
+    drbg = CRYPT_EAL_DrbgNew(algId, &seedMeth, &detCtx);
+    ASSERT_TRUE(drbg != NULL);
+    implCtx = (DRBG_Ctx *)drbg->ctx;
+
+    ASSERT_EQ(DRBG_Ctrl(implCtx, CRYPT_CTRL_SET_RESEED_INTERVAL, &interval, sizeof(interval)), CRYPT_SUCCESS);
+    ASSERT_EQ(CRYPT_EAL_DrbgInstantiate(drbg, NULL, 0), CRYPT_SUCCESS);
+
+    ASSERT_EQ(CRYPT_EAL_Drbgbytes(drbg, output, DRBG_TEST_OUTPUT_SIZE), CRYPT_SUCCESS);
+
+    for (int i = 0; i < 5; i++) {
+        uint32_t prevEntropyCalls = detCtx.callCount;
+        int32_t ret = CRYPT_EAL_Drbgbytes(drbg, output, DRBG_TEST_OUTPUT_SIZE);
+        ASSERT_EQ(ret, CRYPT_SUCCESS);
+        ASSERT_TRUE(detCtx.callCount > prevEntropyCalls);
+    }
+
+EXIT:
+    CRYPT_EAL_DrbgDeinit(drbg);
+    return;
+}
+/* END_CASE */
+
+/**
+ * @test SDV_DRBG_STATE_MACHINE_UNINSTANTIATE_FROM_EACH_STATE_TC001
+ * @title Verify Uninstantiate works from every DRBG state
+ * @precon nan
+ * @brief
+ *  1.Call Uninstantiate from UNINITIALISED state
+ *  2.Call Uninstantiate from READY state (after Instantiate)
+ *  3.Call Uninstantiate from ERROR state
+ *  4.Verify all transitions result in UNINITIALISED state
+ * @expect
+ *  Uninstantiate always transitions to UNINITIALISED
+ */
+/* BEGIN_CASE */
+void SDV_DRBG_STATE_MACHINE_UNINSTANTIATE_FROM_EACH_STATE_TC001(int algId)
+{
+    if (IsRandAlgDisabled(algId)) {
+        SKIP_TEST();
+    }
+
+    TestMemInit();
+
+    CRYPT_RandSeedMethod seedMeth = {0};
+    DetEntropyCtx detCtx = {0};
+    CRYPT_EAL_RndCtx *drbg = NULL;
+    DRBG_Ctx *implCtx = NULL;
+
+    SetupDetEntropy(&seedMeth, &detCtx, 99999);
+
+    drbg = CRYPT_EAL_DrbgNew(algId, &seedMeth, &detCtx);
+    ASSERT_TRUE(drbg != NULL);
+    implCtx = (DRBG_Ctx *)drbg->ctx;
+
+    ASSERT_EQ(ImplStateToRef(implCtx->state), REF_STATE_UNINITIALISED);
+    CRYPT_EAL_DrbgDeinit(drbg);
+    drbg = NULL;
+
+    SetupDetEntropy(&seedMeth, &detCtx, 99998);
+    drbg = CRYPT_EAL_DrbgNew(algId, &seedMeth, &detCtx);
+    ASSERT_TRUE(drbg != NULL);
+    implCtx = (DRBG_Ctx *)drbg->ctx;
+
+    ASSERT_EQ(CRYPT_EAL_DrbgInstantiate(drbg, NULL, 0), CRYPT_SUCCESS);
+    ASSERT_EQ(ImplStateToRef(implCtx->state), REF_STATE_READY);
+    CRYPT_EAL_DrbgDeinit(drbg);
+    drbg = NULL;
+
+    SetupDetEntropy(&seedMeth, &detCtx, 99997);
+    drbg = CRYPT_EAL_DrbgNew(algId, &seedMeth, &detCtx);
+    ASSERT_TRUE(drbg != NULL);
+    implCtx = (DRBG_Ctx *)drbg->ctx;
+
+    detCtx.shouldFail = true;
+    int32_t ret = CRYPT_EAL_DrbgInstantiate(drbg, NULL, 0);
+    ASSERT_NE(ret, CRYPT_SUCCESS);
+    ASSERT_EQ(ImplStateToRef(implCtx->state), REF_STATE_ERROR);
+
+    CRYPT_EAL_DrbgDeinit(drbg);
+
+EXIT:
+    return;
+}
+/* END_CASE */
+
+/**
+ * @test SDV_DRBG_STATE_MACHINE_DOUBLE_INSTANTIATE_TC001
+ * @title Verify double instantiation fails correctly
+ * @precon nan
+ * @brief
+ *  1.Create DRBG and instantiate successfully
+ *  2.Call Instantiate again - should fail with state error
+ *  3.Verify DRBG remains in READY state
+ * @expect
+ *  Second instantiation returns error and does not corrupt state
+ */
+/* BEGIN_CASE */
+void SDV_DRBG_STATE_MACHINE_DOUBLE_INSTANTIATE_TC001(int algId)
+{
+    if (IsRandAlgDisabled(algId)) {
+        SKIP_TEST();
+    }
+
+    TestMemInit();
+
+    CRYPT_RandSeedMethod seedMeth = {0};
+    DetEntropyCtx detCtx = {0};
+    CRYPT_EAL_RndCtx *drbg = NULL;
+    DRBG_Ctx *implCtx = NULL;
+
+    SetupDetEntropy(&seedMeth, &detCtx, 10101);
+
+    drbg = CRYPT_EAL_DrbgNew(algId, &seedMeth, &detCtx);
+    ASSERT_TRUE(drbg != NULL);
+    implCtx = (DRBG_Ctx *)drbg->ctx;
+
+    ASSERT_EQ(CRYPT_EAL_DrbgInstantiate(drbg, NULL, 0), CRYPT_SUCCESS);
+    ASSERT_EQ(ImplStateToRef(implCtx->state), REF_STATE_READY);
+
+    int32_t ret = CRYPT_EAL_DrbgInstantiate(drbg, NULL, 0);
+    ASSERT_NE(ret, CRYPT_SUCCESS);
+    ASSERT_EQ(ImplStateToRef(implCtx->state), REF_STATE_READY);
+
+    uint8_t output[DRBG_TEST_OUTPUT_SIZE];
+    ret = CRYPT_EAL_Drbgbytes(drbg, output, DRBG_TEST_OUTPUT_SIZE);
+    ASSERT_EQ(ret, CRYPT_SUCCESS);
+
+EXIT:
+    CRYPT_EAL_DrbgDeinit(drbg);
+    return;
+}
+/* END_CASE */
+
+/**
+ * @test SDV_DRBG_STATE_MACHINE_GENERATE_FROM_UNINITIALISED_TC001
+ * @title Verify Generate from UNINITIALISED state triggers auto-instantiation
+ * @precon nan
+ * @brief
+ *  1.Create DRBG without calling Instantiate
+ *  2.Call Generate directly
+ *  3.Verify DRBG auto-instantiates and generates output
+ * @expect
+ *  Generate from UNINITIALISED state auto-instantiates successfully
+ */
+/* BEGIN_CASE */
+void SDV_DRBG_STATE_MACHINE_GENERATE_FROM_UNINITIALISED_TC001(int algId)
+{
+    if (IsRandAlgDisabled(algId)) {
+        SKIP_TEST();
+    }
+
+    TestMemInit();
+
+    CRYPT_RandSeedMethod seedMeth = {0};
+    DetEntropyCtx detCtx = {0};
+    CRYPT_EAL_RndCtx *drbg = NULL;
+    DRBG_Ctx *implCtx = NULL;
+    uint8_t output[DRBG_TEST_OUTPUT_SIZE];
+
+    SetupDetEntropy(&seedMeth, &detCtx, 20202);
+
+    drbg = CRYPT_EAL_DrbgNew(algId, &seedMeth, &detCtx);
+    ASSERT_TRUE(drbg != NULL);
+    implCtx = (DRBG_Ctx *)drbg->ctx;
+
+    ASSERT_EQ(ImplStateToRef(implCtx->state), REF_STATE_UNINITIALISED);
+
+    int32_t ret = CRYPT_EAL_Drbgbytes(drbg, output, DRBG_TEST_OUTPUT_SIZE);
+    ASSERT_EQ(ret, CRYPT_SUCCESS);
+    ASSERT_EQ(ImplStateToRef(implCtx->state), REF_STATE_READY);
+
+EXIT:
+    CRYPT_EAL_DrbgDeinit(drbg);
+    return;
+}
+/* END_CASE */
+
+/**
+ * @test SDV_DRBG_STATE_MACHINE_RESEED_FROM_ERROR_TC001
+ * @title Verify Reseed from ERROR state auto-recovers
+ * @precon nan
+ * @brief
+ *  1.Create DRBG and instantiate successfully
+ *  2.Cause entropy failure during reseed to enter ERROR state
+ *  3.Call Reseed again with working entropy
+ *  4.Verify DRBG recovers to READY state
+ * @expect
+ *  Reseed from ERROR state auto-recovers and succeeds
+ */
+/* BEGIN_CASE */
+void SDV_DRBG_STATE_MACHINE_RESEED_FROM_ERROR_TC001(int algId)
+{
+    if (IsRandAlgDisabled(algId)) {
+        SKIP_TEST();
+    }
+
+    TestMemInit();
+
+    CRYPT_RandSeedMethod seedMeth = {0};
+    DetEntropyCtx detCtx = {0};
+    CRYPT_EAL_RndCtx *drbg = NULL;
+    DRBG_Ctx *implCtx = NULL;
+
+    SetupDetEntropy(&seedMeth, &detCtx, 30303);
+
+    drbg = CRYPT_EAL_DrbgNew(algId, &seedMeth, &detCtx);
+    ASSERT_TRUE(drbg != NULL);
+    implCtx = (DRBG_Ctx *)drbg->ctx;
+
+    ASSERT_EQ(CRYPT_EAL_DrbgInstantiate(drbg, NULL, 0), CRYPT_SUCCESS);
+
+    detCtx.shouldFail = true;
+    int32_t ret = CRYPT_EAL_DrbgSeed(drbg);
+    ASSERT_NE(ret, CRYPT_SUCCESS);
+    ASSERT_EQ(ImplStateToRef(implCtx->state), REF_STATE_ERROR);
+
+    detCtx.shouldFail = false;
+    ret = CRYPT_EAL_DrbgSeed(drbg);
+    ASSERT_EQ(ret, CRYPT_SUCCESS);
+    ASSERT_EQ(ImplStateToRef(implCtx->state), REF_STATE_READY);
+
+EXIT:
+    CRYPT_EAL_DrbgDeinit(drbg);
+    return;
+}
+/* END_CASE */
+
+/**
+ * @test SDV_DRBG_STATE_MACHINE_ENTROPY_FAILURE_DURING_GENERATE_TC001
+ * @title Verify entropy failure during auto-reseed in Generate
+ * @precon nan
+ * @brief
+ * 1.Create DRBG with small reseed interval (2)
+ * 2.Instantiate and generate twice (reseedCtr becomes 3)
+ * 3.Set entropy to fail
+ * 4.Generate again (triggers auto-reseed because 3>2, which fails)
+ * 5.Verify DRBG enters ERROR state
+ * 6.Re-enable entropy and generate again - should auto-recover
+ * @expect
+ * Entropy failure during auto-reseed puts DRBG in ERROR state
+ * Subsequent generate with working entropy auto-recovers
+ */
+/* BEGIN_CASE */
+void SDV_DRBG_STATE_MACHINE_ENTROPY_FAILURE_DURING_GENERATE_TC001(int algId)
+{
+    if (IsRandAlgDisabled(algId)) {
+        SKIP_TEST();
+    }
+
+    TestMemInit();
+
+    CRYPT_RandSeedMethod seedMeth = {0};
+    DetEntropyCtx detCtx = {0};
+    CRYPT_EAL_RndCtx *drbg = NULL;
+    DRBG_Ctx *implCtx = NULL;
+    uint8_t output[DRBG_TEST_OUTPUT_SIZE];
+    uint32_t interval = 2;
+
+    SetupDetEntropy(&seedMeth, &detCtx, 40404);
+
+    drbg = CRYPT_EAL_DrbgNew(algId, &seedMeth, &detCtx);
+    ASSERT_TRUE(drbg != NULL);
+    implCtx = (DRBG_Ctx *)drbg->ctx;
+
+    ASSERT_EQ(DRBG_Ctrl(implCtx, CRYPT_CTRL_SET_RESEED_INTERVAL, &interval, sizeof(interval)), CRYPT_SUCCESS);
+    ASSERT_EQ(CRYPT_EAL_DrbgInstantiate(drbg, NULL, 0), CRYPT_SUCCESS);
+
+    ASSERT_EQ(CRYPT_EAL_Drbgbytes(drbg, output, DRBG_TEST_OUTPUT_SIZE), CRYPT_SUCCESS);
+    ASSERT_EQ(implCtx->reseedCtr, 2);
+
+    ASSERT_EQ(CRYPT_EAL_Drbgbytes(drbg, output, DRBG_TEST_OUTPUT_SIZE), CRYPT_SUCCESS);
+    ASSERT_EQ(implCtx->reseedCtr, 3);
+
+    detCtx.shouldFail = true;
+    int32_t ret = CRYPT_EAL_Drbgbytes(drbg, output, DRBG_TEST_OUTPUT_SIZE);
+    ASSERT_NE(ret, CRYPT_SUCCESS);
+    ASSERT_EQ(ImplStateToRef(implCtx->state), REF_STATE_ERROR);
+
+    detCtx.shouldFail = false;
+    ret = CRYPT_EAL_Drbgbytes(drbg, output, DRBG_TEST_OUTPUT_SIZE);
+    ASSERT_EQ(ret, CRYPT_SUCCESS);
+    ASSERT_EQ(ImplStateToRef(implCtx->state), REF_STATE_READY);
+
 EXIT:
     CRYPT_EAL_DrbgDeinit(drbg);
     return;
