@@ -8,3 +8,4 @@ testcode/output/
 platform/*
 .DS_Store
 testcode/testdata/provider/path*
+graphify-out/
