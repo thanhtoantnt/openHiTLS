@@ -255,6 +255,31 @@ target_compile_definitions(rapidcheck_encode_test PRIVATE
 target_link_libraries(rapidcheck_encode_test ${HITLS_COMMON_LIBS})
 
 # =============================================================================
+# BigNum (BN) Tests
+# Covers: algebraic properties (add/sub/mul commutativity, identity),
+# binary roundtrip (BinToBn -> BnToBin), null handling, zero/one edges
+# =============================================================================
+add_executable(rapidcheck_bn_test rapidcheck_bn_test.cpp)
+target_include_directories(rapidcheck_bn_test PRIVATE ${TEST_INCLUDE_DIRS})
+target_compile_definitions(rapidcheck_bn_test PRIVATE
+    ${HITLS_COMMON_DEFS}
+    HITLS_CRYPTO_BN
+)
+target_link_libraries(rapidcheck_bn_test ${HITLS_COMMON_LIBS})
+
+# =============================================================================
+# DRBG Tests
+# Covers: FSM state transitions (init/instantiate/generate/reseed)
+# =============================================================================
+add_executable(rapidcheck_drbg_test rapidcheck_drbg_test.cpp)
+target_include_directories(rapidcheck_drbg_test PRIVATE ${TEST_INCLUDE_DIRS})
+target_compile_definitions(rapidcheck_drbg_test PRIVATE
+    ${HITLS_COMMON_DEFS}
+    HITLS_CRYPTO_RAND
+)
+target_link_libraries(rapidcheck_drbg_test ${HITLS_COMMON_LIBS})
+
+# =============================================================================
 # Test Registration
 # =============================================================================
 enable_testing()
@@ -267,3 +292,4 @@ add_test(NAME RapidCheck_PBKDF2 COMMAND rapidcheck_pbkdf2_test)
 add_test(NAME RapidCheck_ChaCha20Poly1305 COMMAND rapidcheck_chacha20poly1305_test)
 add_test(NAME RapidCheck_Base64 COMMAND rapidcheck_base64_test)
 add_test(NAME RapidCheck_Encode COMMAND rapidcheck_encode_test)
+add_test(NAME RapidCheck_BN COMMAND rapidcheck_bn_test)
